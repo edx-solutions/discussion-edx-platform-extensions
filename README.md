@@ -1,1 +1,0 @@
-# discussion-edx-platform-extensions
