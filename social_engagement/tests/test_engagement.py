@@ -27,7 +27,7 @@ from social_engagement.engagement import update_all_courses_engagement_scores
 from edx_notifications.startup import initialize as initialize_notifications
 from edx_notifications.lib.consumer import get_notifications_count_for_user
 
-MODULESTORE_CONFIG = mixed_store_config(settings.COMMON_TEST_DATA_ROOT, {}, include_xml=False)
+MODULESTORE_CONFIG = mixed_store_config(settings.COMMON_TEST_DATA_ROOT, {})
 
 
 @override_settings(MODULESTORE=MODULESTORE_CONFIG)
