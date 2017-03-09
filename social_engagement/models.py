@@ -9,7 +9,7 @@ from django.dispatch import receiver
 from django.db.models.signals import post_save
 
 from model_utils.models import TimeStampedModel
-from xmodule_django.models import CourseKeyField
+from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
 
 
 class StudentSocialEngagementScore(TimeStampedModel):
