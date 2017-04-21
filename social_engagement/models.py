@@ -4,12 +4,13 @@ Django database models supporting the social_engagement app
 
 from django.contrib.auth.models import User
 from django.db import models
-from django.db.models import Q, Avg
+from django.db.models import Q, Sum
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 
 from model_utils.models import TimeStampedModel
 from xmodule_django.models import CourseKeyField
+from student.models import CourseEnrollment
 
 
 class StudentSocialEngagementScore(TimeStampedModel):
@@ -99,7 +100,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         ]
 
         """
-
+        exclude_users = exclude_users or []
         queryset = cls.objects.select_related('user')\
             .filter(course_id__exact=course_key, user__is_active=True, user__courseenrollment__is_active=True,
                     user__courseenrollment__course_id__exact=course_key)
@@ -110,8 +111,13 @@ class StudentSocialEngagementScore(TimeStampedModel):
         if org_ids:
             queryset = queryset.filter(user__organizations__in=org_ids)
 
-        aggregates = queryset.aggregate(Avg('score'))
-        course_avg = aggregates['score__avg'] if aggregates['score__avg'] else 0
+        aggregates = queryset.aggregate(Sum('score'))
+        course_avg = 0
+        total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
+        if total_score:
+            total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            course_avg = int(round(total_score / total_user_count))
+
         if count:
             queryset = queryset.values(
                 'user__id',
