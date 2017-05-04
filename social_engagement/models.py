@@ -4,7 +4,7 @@ Django database models supporting the social_engagement app
 
 from django.contrib.auth.models import User
 from django.db import models
-from django.db.models import Q, Avg
+from django.db.models import Q
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 
@@ -68,21 +68,15 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         if queryset:
             user_score = queryset.score
-            user_time_scored = queryset.created
 
-            query = cls.objects.select_related('user').filter(
-                Q(score__gt=user_score) | Q(score=user_score, modified__lt=user_time_scored),
-                course_id__exact=course_key,
-                user__is_active=True,
-                user__courseenrollment__is_active=True,
-                user__courseenrollment__course_id__exact=course_key,
-            )
+            query = cls.objects.filter(Q(score__gt=user_score),
+                                       course_id__exact=course_key, user__is_active=True)
 
             if exclude_users:
                 query = query.exclude(user__id__in=exclude_users)
 
             users_above = query.count()
-            data['position'] = users_above + 1
+            data['position'] = users_above + 1 if user_score > 0 else 0
             data['score'] = user_score
         return data
 
@@ -100,7 +94,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         """
 
-        queryset = cls.objects.select_related('user')\
+        queryset = cls.objects\
             .filter(course_id__exact=course_key, user__is_active=True, user__courseenrollment__is_active=True,
                     user__courseenrollment__course_id__exact=course_key)
 
@@ -109,19 +103,14 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         if org_ids:
             queryset = queryset.filter(user__organizations__in=org_ids)
-
-        aggregates = queryset.aggregate(Avg('score'))
-        course_avg = aggregates['score__avg'] if aggregates['score__avg'] else 0
-        if count:
-            queryset = queryset.values(
-                'user__id',
-                'user__username',
-                'user__profile__title',
-                'user__profile__avatar_url',
-                'score',
-                'modified')\
-                .order_by('-score', 'modified')[:count]
-        return course_avg, queryset
+        queryset = queryset.values(
+            'user__id',
+            'user__username',
+            'user__profile__title',
+            'user__profile__avatar_url',
+            'score')\
+            .order_by('-score', 'modified')[:count]
+        return queryset
 
 
 class StudentSocialEngagementScoreHistory(TimeStampedModel):
