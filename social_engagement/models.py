@@ -82,7 +82,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 query = query.exclude(user__id__in=exclude_users)
 
             users_above = query.count()
-            data['position'] = users_above + 1 if user_score > 0 else 0
+            data['position'] = users_above + 1
             data['score'] = user_score
         return data
 
