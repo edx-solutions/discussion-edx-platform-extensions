@@ -122,7 +122,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertIsNotNone(leaderboard)
         self.assertEqual(len(leaderboard), 1)
-        self.assertEqual(course_avg, 5)
+        self.assertEqual(course_avg, 10)
 
         self.assertEqual(leaderboard[0]['user__id'], self.user.id)
         self.assertEqual(leaderboard[0]['score'], 10)
@@ -172,7 +172,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertIsNotNone(leaderboard)
         self.assertEqual(len(leaderboard), 1)
-        self.assertEqual(course_avg, 10)
+        self.assertEqual(course_avg, 20)
 
         self.assertEqual(leaderboard[0]['user__id'], self.user.id)
         self.assertEqual(leaderboard[0]['score'], 20)
@@ -344,11 +344,11 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertEqual(len(leaderboard), 2)
-        self.assertEqual(course_avg, 85)
+        self.assertEqual(course_avg, 85.0)
 
         course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
         self.assertEqual(len(leaderboard), 1)
-        self.assertEqual(course_avg, 85)
+        self.assertEqual(course_avg, 85.0)
 
     def test_closed_course(self):
         """
@@ -389,7 +389,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
             # shouldn't be anything in there because course is closed
             course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
             self.assertEqual(len(leaderboard), 2)
-            self.assertEqual(course_avg, 85)
+            self.assertEqual(course_avg, 85.0)
 
     def test_no_score(self):
         """
