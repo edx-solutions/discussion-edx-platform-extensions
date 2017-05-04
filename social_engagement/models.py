@@ -116,7 +116,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
         if total_score:
             total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
-            course_avg = int(round(total_score / total_user_count))
+            course_avg = int(round(total_score / float(total_user_count)))
 
         if count:
             queryset = queryset.values(
