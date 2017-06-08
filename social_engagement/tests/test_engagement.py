@@ -10,13 +10,13 @@ from django.db import IntegrityError
 from mock import patch
 from datetime import datetime, timedelta
 import pytz
+import ddt
 
 from django.test.utils import override_settings
 
 from student.tests.factories import UserFactory
 from student.models import CourseEnrollment
 from xmodule.modulestore.tests.factories import CourseFactory
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase, mixed_store_config
 
 from social_engagement.models import StudentSocialEngagementScore, StudentSocialEngagementScoreHistory
 
@@ -26,15 +26,20 @@ from social_engagement.engagement import update_all_courses_engagement_scores
 
 from edx_notifications.startup import initialize as initialize_notifications
 from edx_notifications.lib.consumer import get_notifications_count_for_user
+from xmodule.modulestore import ModuleStoreEnum
+from xmodule.modulestore.tests.django_utils import (
+    ModuleStoreTestCase,
+    TEST_DATA_SPLIT_MODULESTORE
+)
 
-MODULESTORE_CONFIG = mixed_store_config(settings.COMMON_TEST_DATA_ROOT, {})
 
-
-@override_settings(MODULESTORE=MODULESTORE_CONFIG)
 @patch.dict(settings.FEATURES, {'ENABLE_NOTIFICATIONS': True})
 @patch.dict(settings.FEATURES, {'ENABLE_SOCIAL_ENGAGEMENT': True})
+@ddt.ddt
 class StudentEngagementTests(ModuleStoreTestCase):
     """ Test suite for CourseModuleCompletion """
+
+    MODULESTORE = TEST_DATA_SPLIT_MODULESTORE
 
     def setUp(self):
         super(StudentEngagementTests, self).setUp()
@@ -316,12 +321,13 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         self.assertEqual(len(leaderboard), 2)
 
-    def test_all_courses(self):
+    @ddt.data(ModuleStoreEnum.Type.split, ModuleStoreEnum.Type.mongo)
+    def test_all_courses(self, store):
         """
         Verifies that we can calculate over all courses
         """
 
-        course2 = CourseFactory.create(org='foo', course='bar', run='baz')
+        course2 = CourseFactory.create(org='foo', course='bar', run='baz', default_store=store)
 
         CourseEnrollment.enroll(self.user, course2.id)
 
@@ -346,7 +352,8 @@ class StudentEngagementTests(ModuleStoreTestCase):
         leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
         self.assertEqual(len(leaderboard), 1)
 
-    def test_closed_course(self):
+    @ddt.data(ModuleStoreEnum.Type.split, ModuleStoreEnum.Type.mongo)
+    def test_closed_course(self, store):
         """
         Make sure we can force update closed course
         """
@@ -355,7 +362,8 @@ class StudentEngagementTests(ModuleStoreTestCase):
             org='foo',
             course='bar',
             run='baz',
-            end=datetime.now(pytz.UTC) - timedelta(days=1)
+            end=datetime.now(pytz.UTC) - timedelta(days=1),
+            default_store=store
         )
 
         CourseEnrollment.enroll(self.user, course2.id)
