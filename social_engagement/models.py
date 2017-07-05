@@ -121,10 +121,10 @@ class StudentSocialEngagementScore(TimeStampedModel):
         Assembles a data set representing the Top N users, by progress, for a given course.
 
         data = [
-                {'id': 123, 'username': 'testuser1', 'title', 'Engineer', 'avatar_url': 'http://gravatar.com/123/', 'score': 80},
-                {'id': 983, 'username': 'testuser2', 'title', 'Analyst', 'avatar_url': 'http://gravatar.com/983/', 'score': 70},
-                {'id': 246, 'username': 'testuser3', 'title', 'Product Owner', 'avatar_url': 'http://gravatar.com/246/', 'score': 62},
-                {'id': 357, 'username': 'testuser4', 'title', 'Director', 'avatar_url': 'http://gravatar.com/357/', 'completions': 58},
+                {'id': 123, 'username': 'testuser1', 'title', 'Engineer', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 80},
+                {'id': 983, 'username': 'testuser2', 'title', 'Analyst', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 70},
+                {'id': 246, 'username': 'testuser3', 'title', 'Product Owner', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 62},
+                {'id': 357, 'username': 'testuser4', 'title', 'Director', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'completions': 58},
         ]
 
         """
@@ -151,7 +151,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 'user__id',
                 'user__username',
                 'user__profile__title',
-                'user__profile__avatar_url',
+                'user__profile__profile_image_uploaded_at',
                 'score',
                 'modified')\
                 .order_by('-score', 'modified')[:count]
