@@ -14,13 +14,15 @@ from lms.lib.comment_client.user import get_user_social_stats
 from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.keys import CourseKey
 from student.models import CourseEnrollment
-from student.roles import get_aggregate_exclusion_user_ids
 from lms.lib.comment_client.utils import CommentClientRequestError
 from requests.exceptions import ConnectionError
 
 from django.dispatch import receiver
 from django.db.models.signals import post_save, pre_save
 
+from edx_solutions_api_integration.utils import (
+    get_aggregate_exclusion_user_ids,
+)
 from edx_notifications.lib.publisher import (
     publish_notification_to_user,
     get_notification_type
