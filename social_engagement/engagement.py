@@ -62,7 +62,7 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
             return
 
     previous_score = StudentSocialEngagementScore.get_user_engagement_score(course_key, user_id)
-
+    previous_score = previous_score if previous_score else 0
     try:
         log.info('Updating social engagement score for user_id {}  in course_key {}'.format(user_id, course_key))
 
@@ -80,7 +80,7 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
 
             log.info('previous_score = {}  current_score = {}'.format(previous_score, current_score))
 
-            if current_score > previous_score or previous_score is None:
+            if current_score != previous_score:
                 StudentSocialEngagementScore.save_user_engagement_score(course_key, user_id, current_score)
 
     except (CommentClientRequestError, ConnectionError), error:
@@ -94,7 +94,7 @@ def _get_user_social_stats(user_id, slash_course_id, end_date):
     """
 
     stats = get_user_social_stats(user_id, slash_course_id, end_date=end_date)
-    log.info('raw stats = {}'.format(stats))
+    log.debug('raw stats = {}'.format(stats))
     # the comment service returns the user_id as a string
     user_id_str = str(user_id)
     if user_id_str in stats:

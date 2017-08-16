@@ -9,6 +9,10 @@ from django.dispatch import receiver
 from django.db.models.signals import post_save
 
 from model_utils.models import TimeStampedModel
+from edx_solutions_api_integration.utils import (
+    invalid_user_data_cache,
+)
+from student.models import CourseEnrollment
 from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
 from student.models import CourseEnrollment
 
@@ -71,14 +75,13 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         Creates or updates an engagement score
         """
-
-        if cls.objects.filter(course_id__exact=course_key, user_id=user_id).exists():
-            entry = cls.objects.get(course_id__exact=course_key, user_id=user_id)
-            entry.score = score
-        else:
-            entry = cls(course_id=course_key, user_id=user_id, score=score)
-
-        entry.save()
+        cls.objects.update_or_create(
+            course_id=course_key,
+            user_id=user_id,
+            defaults={
+                "score": score,
+            }
+        )
 
     @classmethod
     def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None):
@@ -94,9 +97,15 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         if queryset:
             user_score = queryset.score
+            user_time_scored = queryset.created
 
-            query = cls.objects.filter(Q(score__gt=user_score),
-                                       course_id__exact=course_key, user__is_active=True)
+            query = cls.objects.select_related('user').filter(
+                Q(score__gt=user_score) | Q(score=user_score, modified__lt=user_time_scored),
+                course_id__exact=course_key,
+                user__is_active=True,
+                user__courseenrollment__is_active=True,
+                user__courseenrollment__course_id__exact=course_key,
+            )
 
             if exclude_users:
                 query = query.exclude(user__id__in=exclude_users)
@@ -119,8 +128,8 @@ class StudentSocialEngagementScore(TimeStampedModel):
         ]
 
         """
-
-        queryset = cls.objects\
+        exclude_users = exclude_users or []
+        queryset = cls.objects.select_related('user')\
             .filter(course_id__exact=course_key, user__is_active=True, user__courseenrollment__is_active=True,
                     user__courseenrollment__course_id__exact=course_key)
 
@@ -129,14 +138,24 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         if org_ids:
             queryset = queryset.filter(user__organizations__in=org_ids)
-        queryset = queryset.values(
-            'user__id',
-            'user__username',
-            'user__profile__title',
-            'user__profile__avatar_url',
-            'score')\
-            .order_by('-score', 'modified')[:count]
-        return queryset
+
+        aggregates = queryset.aggregate(Sum('score'))
+        course_avg = 0
+        total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
+        if total_score:
+            total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            course_avg = int(round(total_score / float(total_user_count)))
+
+        if count:
+            queryset = queryset.values(
+                'user__id',
+                'user__username',
+                'user__profile__title',
+                'user__profile__avatar_url',
+                'score',
+                'modified')\
+                .order_by('-score', 'modified')[:count]
+        return course_avg, queryset
 
 
 class StudentSocialEngagementScoreHistory(TimeStampedModel):
@@ -156,7 +175,7 @@ def on_studentengagementscore_save(sender, instance, **kwargs):
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
-
+    invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,
         course_id=instance.course_id,
