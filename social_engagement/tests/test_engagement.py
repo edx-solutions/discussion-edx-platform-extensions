@@ -83,6 +83,41 @@ class StudentEngagementTests(ModuleStoreTestCase):
             StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         )
 
+    def test_get_course_average_engagement_score(self):
+        """
+        Verify that average course engagement score is calculated correctly
+        """
+        self.assertEqual(StudentSocialEngagementScore.get_course_average_engagement_score(self.course.id), 0)
+        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user.id, 100)
+        self.assertEqual(StudentSocialEngagementScore.get_course_average_engagement_score(self.course.id), 50)
+        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user2.id, 50)
+        self.assertEqual(StudentSocialEngagementScore.get_course_average_engagement_score(self.course.id), 75)
+        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user2.id, 150)
+        self.assertEqual(StudentSocialEngagementScore.get_course_average_engagement_score(self.course.id), 125)
+
+        # Exclude users from calculation:
+        self.assertEqual(
+            StudentSocialEngagementScore.get_course_average_engagement_score(
+                self.course.id,
+                exclude_users=[self.user.id],
+            ),
+            150
+        )
+        self.assertEqual(
+            StudentSocialEngagementScore.get_course_average_engagement_score(
+                self.course.id,
+                exclude_users=[self.user2.id],
+            ),
+            100
+        )
+        self.assertEqual(
+            StudentSocialEngagementScore.get_course_average_engagement_score(
+                self.course.id,
+                exclude_users=[self.user.id, self.user2.id],
+            ),
+            0
+        )
+
     def test_save_first_engagement_score(self):
         """
         Basic write operation

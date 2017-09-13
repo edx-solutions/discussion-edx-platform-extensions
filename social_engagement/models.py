@@ -4,12 +4,13 @@ Django database models supporting the social_engagement app
 
 from django.contrib.auth.models import User
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 
 from model_utils.models import TimeStampedModel
 from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
+from student.models import CourseEnrollment
 
 
 class StudentSocialEngagementScore(TimeStampedModel):
@@ -39,6 +40,31 @@ class StudentSocialEngagementScore(TimeStampedModel):
             return None
 
         return entry.score
+
+    @classmethod
+    def get_course_average_engagement_score(cls, course_key, exclude_users=None):
+        """
+        Returns the course average engagement score.
+        """
+        exclude_users = exclude_users or []
+        queryset = cls.objects.select_related('user').filter(
+            course_id__exact=course_key,
+            user__is_active=True,
+            user__courseenrollment__is_active=True,
+            user__courseenrollment__course_id__exact=course_key
+        )
+        queryset = queryset.exclude(user__id__in=exclude_users)
+        aggregates = queryset.aggregate(Sum('score'))
+        avg_score = 0
+        total_score = aggregates['score__sum']
+        if total_score is None:
+            total_score = 0
+        if total_score:
+            user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            if user_count:
+                avg_score = int(round(total_score / float(user_count)))
+
+        return avg_score
 
     @classmethod
     def save_user_engagement_score(cls, course_key, user_id, score):
