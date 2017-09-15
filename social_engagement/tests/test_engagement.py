@@ -80,7 +80,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         )
 
         self.assertFalse(
-            StudentSocialEngagementScore.generate_leaderboard(self.course.id)
+            StudentSocialEngagementScore.generate_leaderboard(self.course.id)[1]
         )
 
     def test_get_course_average_engagement_score(self):
@@ -154,9 +154,10 @@ class StudentEngagementTests(ModuleStoreTestCase):
         )
 
         # look at the leaderboard
-        leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
+        course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertIsNotNone(leaderboard)
         self.assertEqual(len(leaderboard), 1)
+        self.assertEqual(course_avg, 5)
 
         self.assertEqual(leaderboard[0]['user__id'], self.user.id)
         self.assertEqual(leaderboard[0]['score'], 10)
@@ -203,9 +204,10 @@ class StudentEngagementTests(ModuleStoreTestCase):
         )
 
         # look at the leaderboard
-        leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
+        course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertIsNotNone(leaderboard)
         self.assertEqual(len(leaderboard), 1)
+        self.assertEqual(course_avg, 10)
 
         self.assertEqual(leaderboard[0]['user__id'], self.user.id)
         self.assertEqual(leaderboard[0]['score'], 20)
@@ -375,11 +377,13 @@ class StudentEngagementTests(ModuleStoreTestCase):
             # update whole course and re-calc
             update_all_courses_engagement_scores()
 
-        leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
+        course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertEqual(len(leaderboard), 2)
+        self.assertEqual(course_avg, 85)
 
-        leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
+        course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
         self.assertEqual(len(leaderboard), 1)
+        self.assertEqual(course_avg, 85)
 
     def test_closed_course(self):
         """
@@ -410,15 +414,17 @@ class StudentEngagementTests(ModuleStoreTestCase):
             update_all_courses_engagement_scores()
 
             # shouldn't be anything in there because course is closed
-            leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
+            course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
             self.assertEqual(len(leaderboard), 0)
+            self.assertEqual(course_avg, 0)
 
             # update whole course and re-calc
             update_all_courses_engagement_scores(compute_if_closed_course=True)
 
             # shouldn't be anything in there because course is closed
-            leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
+            course_avg, leaderboard = StudentSocialEngagementScore.generate_leaderboard(course2.id)
             self.assertEqual(len(leaderboard), 2)
+            self.assertEqual(course_avg, 85)
 
     def test_no_score(self):
         """

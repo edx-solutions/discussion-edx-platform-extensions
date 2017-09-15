@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='discussion-edx-platform-extensions',
-    version='1.0.1',
+    version='1.1.0',
     description='Social engagement management extension for edX platform',
     long_description=open('README.rst').read(),
     author='edX',
