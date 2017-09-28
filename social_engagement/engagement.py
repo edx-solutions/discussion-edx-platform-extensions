@@ -6,7 +6,9 @@ import sys
 import logging
 from datetime import datetime
 import pytz
+import lms.lib.comment_client as cc
 
+from django.http import HttpRequest
 from django.conf import settings
 
 from .models import StudentSocialEngagementScore
@@ -251,3 +253,68 @@ def handle_progress_post_save_signal(sender, instance, **kwargs):
                 # Notifications are never critical, so we don't want to disrupt any
                 # other logic processing. So log and continue.
                 log.exception(ex)
+
+
+def get_involved_users_in_thread(request, thread_id):
+    """
+    Compute all the users involved in the children of a specific thread.
+    """
+    users = set()
+    users.update(_get_users_in_comment(_get_request(request, {"thread_id": thread_id, "page_size": 100})))
+    return users
+
+
+def get_involved_users_in_comment(request, comment_id, parent_id=None, thread_id=None):
+    '''
+    Method used to extract the involved users in the comment.
+    This method also returns the creator of the post.
+    '''
+    users = set()
+    users.update(_get_users_in_comment(request, comment_id))
+    if parent_id:
+        users.add(_get_author_of_comment(parent_id))
+    if thread_id:
+        users.add(_get_author_of_thread(thread_id))
+    return users
+
+
+def _get_users_in_comment(request, comment_id=None):
+    from lms.djangoapps.discussion_api.views import CommentViewSet
+    users = set()
+    response_page = 1
+    has_results = True
+    while has_results:
+        if comment_id:
+            response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
+        else:
+            response = CommentViewSet().list(request)
+
+        for comment in response.data["results"]:
+            users.add(comment["author"])
+            if comment["child_count"] > 0:
+                users.update(_get_users_in_comment(request, comment["id"]))
+        has_results = response.data["pagination"]["next"]
+        response_page += 1
+    return users
+
+
+def _get_request(incoming_request, params):
+    request = HttpRequest()
+    request.method = 'GET'
+    request.user = incoming_request.user
+    request.META = incoming_request.META.copy()
+    request.GET = incoming_request.GET.copy()
+    request.GET.update(params)
+    return request
+
+
+def _get_author_of_comment(parent_id):
+    comment = cc.Comment.find(parent_id)
+    if comment:
+        return comment.username
+
+
+def _get_author_of_thread(thread_id):
+    thread = cc.Thread.find(thread_id)
+    if thread:
+        return thread.username
