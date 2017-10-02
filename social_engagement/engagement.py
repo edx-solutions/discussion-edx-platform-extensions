@@ -19,6 +19,9 @@ from student.models import CourseEnrollment
 from lms.lib.comment_client.utils import CommentClientRequestError
 from requests.exceptions import ConnectionError
 
+from discussion_api.exceptions import ThreadNotFoundError
+from opaque_keys import InvalidKeyError
+
 from django.dispatch import receiver
 from django.db.models.signals import post_save, pre_save
 
@@ -264,17 +267,17 @@ def get_involved_users_in_thread(request, thread_id):
     return users
 
 
-def get_involved_users_in_comment(request, comment_id, parent_id=None, thread_id=None):
+def get_involved_users_in_comment(request, comment):
     '''
     Method used to extract the involved users in the comment.
     This method also returns the creator of the post.
     '''
     users = set()
-    users.update(_get_users_in_comment(request, comment_id))
-    if parent_id:
-        users.add(_get_author_of_comment(parent_id))
-    if thread_id:
-        users.add(_get_author_of_thread(thread_id))
+    users.update(_get_users_in_comment(request, comment.id))
+    if hasattr(comment, 'parent_id'):
+        users.add(_get_author_of_comment(comment.parent_id))
+    if hasattr(comment, 'thread_id'):
+        users.add(_get_author_of_thread(comment.thread_id))
     return users
 
 
@@ -284,17 +287,20 @@ def _get_users_in_comment(request, comment_id=None):
     response_page = 1
     has_results = True
     while has_results:
-        if comment_id:
-            response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
-        else:
-            response = CommentViewSet().list(request)
+        try:
+            if comment_id:
+                response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
+            else:
+                response = CommentViewSet().list(_get_request(request, {"page": response_page}))
 
-        for comment in response.data["results"]:
-            users.add(comment["author"])
-            if comment["child_count"] > 0:
-                users.update(_get_users_in_comment(request, comment["id"]))
-        has_results = response.data["pagination"]["next"]
-        response_page += 1
+            for comment in response.data["results"]:
+                users.add(comment["author"])
+                if comment["child_count"] > 0:
+                    users.update(_get_users_in_comment(request, comment["id"]))
+            has_results = response.data["pagination"]["next"]
+            response_page += 1
+        except (ThreadNotFoundError, InvalidKeyError):
+            return users
     return users
 
 
@@ -310,11 +316,11 @@ def _get_request(incoming_request, params):
 
 def _get_author_of_comment(parent_id):
     comment = cc.Comment.find(parent_id)
-    if comment:
+    if comment and hasattr(comment, 'username'):
         return comment.username
 
 
 def _get_author_of_thread(thread_id):
     thread = cc.Thread.find(thread_id)
-    if thread:
+    if thread and hasattr(thread, 'username'):
         return thread.username
