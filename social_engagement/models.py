@@ -140,7 +140,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             queryset = queryset.filter(user__organizations__in=org_ids)
 
         aggregates = queryset.aggregate(Sum('score'))
-        course_avg = 0
+        course_avg = total_user_count = 0
         total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
         if total_score:
             total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
@@ -155,7 +155,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 'score',
                 'modified')\
                 .order_by('-score', 'modified')[:count]
-        return course_avg, queryset
+        return course_avg, total_user_count, queryset
 
 
 class StudentSocialEngagementScoreHistory(TimeStampedModel):
