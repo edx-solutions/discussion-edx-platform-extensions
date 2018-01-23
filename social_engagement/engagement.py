@@ -258,12 +258,22 @@ def handle_progress_post_save_signal(sender, instance, **kwargs):
                 log.exception(ex)
 
 
-def get_involved_users_in_thread(request, thread_id):
+def get_involved_users_in_thread(request, thread):
     """
     Compute all the users involved in the children of a specific thread.
     """
     users = set()
-    users.update(_get_users_in_comment(_get_request(request, {"thread_id": thread_id, "page_size": 100})))
+    params = {"thread_id": thread.id, "page_size": 100}
+    is_question = True if thread.thread_type == "question" else False
+    if is_question:
+        # get users of the non-endorsed comments in thread
+        params.update({"endorsed": False})
+        users.update(_get_users_in_thread(_get_request(request, params)))
+        # get users of the endorsed comments in thread
+        params.update({"endorsed": True})
+        users.update(_get_users_in_thread(_get_request(request, params)))
+    else:
+        users.update(_get_users_in_thread(_get_request(request, params)))
     return users
 
 
@@ -278,21 +288,41 @@ def get_involved_users_in_comment(request, comment):
         users.add(_get_author_of_comment(comment.parent_id))
     if hasattr(comment, 'thread_id'):
         users.add(_get_author_of_thread(comment.thread_id))
+
     return users
 
 
-def _get_users_in_comment(request, comment_id=None):
+def _get_users_in_thread(request):
     from lms.djangoapps.discussion_api.views import CommentViewSet
     users = set()
     response_page = 1
     has_results = True
     while has_results:
         try:
-            if comment_id:
-                response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
-            else:
-                response = CommentViewSet().list(_get_request(request, {"page": response_page}))
+            params = {"page": response_page}
+            response = CommentViewSet().list(
+                _get_request(request, params)
+            )
 
+            for comment in response.data["results"]:
+                users.add(comment["author"])
+                if comment["child_count"] > 0:
+                    users.update(_get_users_in_comment(request, comment["id"]))
+            has_results = response.data["pagination"]["next"]
+            response_page += 1
+        except (ThreadNotFoundError, InvalidKeyError):
+            return users
+    return users
+
+
+def _get_users_in_comment(request, comment_id):
+    from lms.djangoapps.discussion_api.views import CommentViewSet
+    users = set()
+    response_page = 1
+    has_results = True
+    while has_results:
+        try:
+            response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
             for comment in response.data["results"]:
                 users.add(comment["author"])
                 if comment["child_count"] > 0:
