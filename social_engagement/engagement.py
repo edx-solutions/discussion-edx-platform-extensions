@@ -264,7 +264,7 @@ def get_involved_users_in_thread(request, thread):
     """
     users = set()
     params = {"thread_id": thread.id, "page_size": 100}
-    is_question = True if thread.thread_type == "question" else False
+    is_question = True if getattr(thread, "thread_type", None) == "question" else False
     if is_question:
         # get users of the non-endorsed comments in thread
         params.update({"endorsed": False})
