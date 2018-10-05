@@ -168,13 +168,37 @@ class StudentSocialEngagementScoreHistory(TimeStampedModel):
     score = models.IntegerField()
 
 
+class StudentSocialEngagementStats(TimeStampedModel):
+    """
+    Stores the social engagement stats for faster access and calculation.
+    """
+    score = models.OneToOneField(
+        StudentSocialEngagementScore,
+        on_delete=models.CASCADE,
+        related_name='stats',
+        primary_key=True
+    )
+    num_threads = models.IntegerField(default=0, db_index=True, null=False)
+    num_thread_followers = models.IntegerField(default=0, db_index=True, null=False)
+    num_replies = models.IntegerField(default=0, db_index=True, null=False)
+    num_flagged = models.IntegerField(default=0, db_index=True, null=False)
+    num_comments = models.IntegerField(default=0, db_index=True, null=False)
+    num_threads_read = models.IntegerField(default=0, db_index=True, null=False)
+    num_downvotes = models.IntegerField(default=0, db_index=True, null=False)
+    num_upvotes = models.IntegerField(default=0, db_index=True, null=False)
+    num_comments_generated = models.IntegerField(default=0, db_index=True, null=False)
+
+
 @receiver(post_save, sender=StudentSocialEngagementScore)
-def on_studentengagementscore_save(sender, instance, **kwargs):
+def on_studentengagementscore_save(sender, instance, created, **kwargs):
     """
     When a studentengagementscore is saved, we want to also store the
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
+    if created:
+        StudentSocialEngagementStats.objects.create(score=instance)
+
     invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,

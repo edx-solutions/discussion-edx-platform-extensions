@@ -3,15 +3,18 @@ Business logic tier regarding social engagement scores
 """
 
 import sys
+from collections import defaultdict
+
 import logging
 from datetime import datetime
 import pytz
 import lms.lib.comment_client as cc
+from django.contrib.auth.models import User
 
 from django.http import HttpRequest
 from django.conf import settings
 
-from .models import StudentSocialEngagementScore
+from .models import StudentSocialEngagementScore, StudentSocialEngagementStats
 from lms.lib.comment_client.user import get_user_social_stats
 from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.keys import CourseKey
@@ -19,7 +22,7 @@ from student.models import CourseEnrollment
 from lms.lib.comment_client.utils import CommentClientRequestError
 from requests.exceptions import ConnectionError
 
-from discussion_api.exceptions import ThreadNotFoundError
+from discussion_api.exceptions import CommentNotFoundError, ThreadNotFoundError
 from opaque_keys import InvalidKeyError
 
 from django.dispatch import receiver
@@ -66,8 +69,8 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
             log.info('update_user_engagement_score() is skipping because the course is closed...')
             return
 
-    previous_score = StudentSocialEngagementScore.get_user_engagement_score(course_key, user_id)
-    previous_score = previous_score if previous_score else 0
+    previous_score = StudentSocialEngagementScore.get_user_engagement_score(course_key, user_id) or 0
+
     try:
         log.info('Updating social engagement score for user_id {}  in course_key {}'.format(user_id, course_key))
 
@@ -79,6 +82,7 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
         # and so there might be a HTTP based communication error
 
         social_stats = _get_user_social_stats(user_id, slash_course_id, course_descriptor.end)
+        _update_current_data(user_id, course_id, social_stats)
 
         if social_stats:
             current_score = _compute_social_engagement_score(social_stats)
@@ -106,6 +110,17 @@ def _get_user_social_stats(user_id, slash_course_id, end_date):
         return stats[user_id_str]
     else:
         return None
+
+
+def _update_current_data(user_id, course_id, social_metrics):
+    """
+    Store data from API.
+    """
+    stats = StudentSocialEngagementStats.objects.get(score__user__id=user_id, score__course_id=course_id)
+    for key, val in social_metrics.iteritems():
+        setattr(stats, key, val)
+
+    stats.save()
 
 
 def _compute_social_engagement_score(social_metrics):
@@ -282,12 +297,21 @@ def get_involved_users_in_comment(request, comment):
     Method used to extract the involved users in the comment.
     This method also returns the creator of the post.
     '''
-    users = set()
-    users.update(_get_users_in_comment(request, comment.id))
+    # users.update(_get_users_in_comment(request, comment.id))
+    author_id = None
     if hasattr(comment, 'parent_id'):
-        users.add(_get_author_of_comment(comment.parent_id))
+        author_id = _get_author_of_comment(comment.parent_id)
     if hasattr(comment, 'thread_id'):
-        users.add(_get_author_of_thread(comment.thread_id))
+        author_id = _get_author_of_thread(comment.thread_id)
+
+    results = _get_comment_details_for_deletion(request, comment.id)
+    users = results['users']
+    for user, _ in users.items():
+        id = int(User.objects.get(username=user).id)
+        users[id] = users[user]
+        del users[user]
+    if author_id:
+        users[int(author_id)]['num_replies'] += results['replies']
 
     return users
 
@@ -346,11 +370,78 @@ def _get_request(incoming_request, params):
 
 def _get_author_of_comment(parent_id):
     comment = cc.Comment.find(parent_id)
-    if comment and hasattr(comment, 'username'):
-        return comment.username
+    if comment and hasattr(comment, 'user_id'):
+        return comment.user_id
 
 
 def _get_author_of_thread(thread_id):
     thread = cc.Thread.find(thread_id)
-    if thread and hasattr(thread, 'username'):
-        return thread.username
+    if thread and hasattr(thread, 'user_id'):
+        return thread.user_id
+
+
+def _get_thread_details_for_deletion(request):
+    """
+    Get details of thread and related users that are required for deletion purposes.
+    """
+    from lms.djangoapps.discussion_api.views import CommentViewSet
+    results = {
+        'replies': 0,
+        'users': defaultdict(lambda: defaultdict(int)),
+    }
+
+    response_page = 1
+    has_results = True
+    while has_results:
+        try:
+            response = CommentViewSet().list(_get_request(request, {"page": response_page}))
+            if results['replies'] == 0:
+                results['replies'] = response.data['pagination']['count']
+
+            for comment in response.data["results"]:
+                results['users'][comment['author']]['num_comments'] += 1
+                results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
+
+                if comment['child_count'] > 0:
+                    results['users'][comment['author']]['num_replies'] += comment['child_count']
+                    _get_comment_details_for_deletion(request, comment['id'], results)
+
+            has_results = response.data["pagination"]["next"]
+            response_page += 1
+        except (ThreadNotFoundError, InvalidKeyError):
+            return results
+    return results
+
+
+def _get_comment_details_for_deletion(request, comment_id, results=None):
+    """
+    Get details of comment and related users that are required for deletion purposes.
+    """
+    from lms.djangoapps.discussion_api.views import CommentViewSet
+    if not results:
+        results = {
+            'replies': 0,
+            'users': defaultdict(lambda: defaultdict(int)),
+        }
+
+    response_page = 1
+    has_results = True
+    while has_results:
+        try:
+            response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
+            if results['replies'] == 0:
+                results['replies'] = response.data['pagination']['count']
+
+            for comment in response.data["results"]:
+                results['users'][comment['author']]['num_comments'] += 1
+                results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
+
+                if comment['child_count'] > 0:
+                    results['users'][comment['author']]['num_replies'] += comment['child_count']
+                    _get_comment_details_for_deletion(request, comment['id'], results)
+
+            has_results = response.data["pagination"]["next"]
+            response_page += 1
+        except (CommentNotFoundError, InvalidKeyError):
+            return results
+    return results
