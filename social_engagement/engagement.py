@@ -14,7 +14,7 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest
 from django.conf import settings
 
-from .models import StudentSocialEngagementScore, StudentSocialEngagementStats
+from .models import StudentSocialEngagementScore
 from lms.lib.comment_client.user import get_user_social_stats
 from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.keys import CourseKey
@@ -96,6 +96,26 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
         log.exception(error)
 
 
+def get_social_metric_points():
+    """
+    Get custom or default social metric points.
+    """
+    # we can override this in configuration, but this
+    # is default values
+    return getattr(
+        settings,
+        'SOCIAL_METRIC_POINTS',
+        {
+            'num_threads': 10,
+            'num_comments': 15,
+            'num_replies': 15,
+            'num_upvotes': 25,
+            'num_thread_followers': 5,
+            'num_comments_generated': 15,
+        }
+    )
+
+
 def _get_user_social_stats(user_id, slash_course_id, end_date):
     """
     Helper function which basically calls into the cs_comment_service. We wrap this,
@@ -112,15 +132,15 @@ def _get_user_social_stats(user_id, slash_course_id, end_date):
         return None
 
 
-def _update_current_data(user_id, course_id, social_metrics):
+def _update_current_data(user_id, course_id, social_stats):
     """
     Store data from API.
     """
-    stats = StudentSocialEngagementStats.objects.get(score__user__id=user_id, score__course_id=course_id)
-    for key, val in social_metrics.iteritems():
-        setattr(stats, key, val)
+    score = StudentSocialEngagementScore.objects.get(user__id=user_id, course_id=course_id)
+    for key, val in social_stats.iteritems():
+        setattr(score, key, val)
 
-    stats.save()
+    score.save()
 
 
 def _compute_social_engagement_score(social_metrics):
@@ -130,18 +150,7 @@ def _compute_social_engagement_score(social_metrics):
 
     # we can override this in configuration, but this
     # is default values
-    social_metric_points = getattr(
-        settings,
-        'SOCIAL_METRIC_POINTS',
-        {
-            'num_threads': 10,
-            'num_comments': 15,
-            'num_replies': 15,
-            'num_upvotes': 25,
-            'num_thread_followers': 5,
-            'num_comments_generated': 15,
-        }
-    )
+    social_metric_points = get_social_metric_points()
 
     social_total = 0
     for key, val in social_metric_points.iteritems():
@@ -293,11 +302,10 @@ def get_involved_users_in_thread(request, thread):
 
 
 def get_involved_users_in_comment(request, comment):
-    '''
+    """
     Method used to extract the involved users in the comment.
     This method also returns the creator of the post.
-    '''
-    # users.update(_get_users_in_comment(request, comment.id))
+    """
     author_id = None
     if hasattr(comment, 'parent_id'):
         author_id = _get_author_of_comment(comment.parent_id)

@@ -1,7 +1,6 @@
 """
 Discussion forum signal handlers
 """
-from django.conf import settings
 from django.dispatch import receiver
 
 from django_comment_common.signals import (
@@ -15,9 +14,7 @@ from django_comment_common.signals import (
     thread_unfollowed,
 )
 import lms.lib.comment_client as cc
-from opaque_keys.edx.keys import CourseKey
-
-from social_engagement.models import StudentSocialEngagementScore
+from social_engagement.tasks import task_handle_change_after_signal
 
 
 @receiver(thread_deleted)
@@ -143,7 +140,6 @@ def thread_unfollow_signal_handler(sender, **kwargs):  # pylint: disable=unused-
     action_user = kwargs['user']  # user who followed or un-followed thread
 
     if user_id and action_user.id != int(user_id):
-        # task_update_user_engagement_score.delay(unicode(course_id), user_id)
         _decrement(user_id, course_id, 'num_thread_followers')
 
 
@@ -151,49 +147,11 @@ def _increment(*args, **kwargs):
     """
     A facade for handling incrementation.
     """
-    _change_handler(*args, **kwargs)
+    task_handle_change_after_signal.delay(*args, **kwargs)
 
 
 def _decrement(*args, **kwargs):
     """
     A facade for handling decrementation.
     """
-    _change_handler(*args, increment=False, **kwargs)
-
-
-def _change_handler(user_id, course_id, param, increment=True, items=1):
-    """
-    Save changes and calculate score.
-    """
-    factor = items if increment else -items
-    social_metric_points = getattr(
-        settings,
-        'SOCIAL_METRIC_POINTS',
-        {
-            'num_threads': 10,
-            'num_comments': 15,
-            'num_replies': 15,
-            'num_upvotes': 25,
-            'num_thread_followers': 5,
-            'num_comments_generated': 15,
-        }
-    )
-
-    if settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT') and user_id and course_id:
-        score = StudentSocialEngagementScore.objects.get_or_create(
-            user__id=user_id,
-            course_id=CourseKey.from_string(course_id),
-        )[0]
-        if isinstance(param, dict):
-            for key, value in param.items():
-                score.score += social_metric_points.get(key, 0) * factor * value
-
-                previous = getattr(score.stats, key, 0)
-                setattr(score.stats, key, previous + factor)
-        else:
-            score.score += social_metric_points.get(param, 0) * factor
-            previous = getattr(score.stats, param, 0)
-            setattr(score.stats, param, previous + factor)
-
-        score.save()
-        score.stats.save()
+    task_handle_change_after_signal.delay(*args, increment=False, **kwargs)

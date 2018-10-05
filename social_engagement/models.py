@@ -25,6 +25,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
     course_id = CourseKeyField(db_index=True, max_length=255, blank=True, null=False)
     score = models.IntegerField(default=0, db_index=True, null=False)
 
+    # stats
+    num_threads = models.IntegerField(default=0)
+    num_thread_followers = models.IntegerField(default=0)
+    num_replies = models.IntegerField(default=0)
+    num_flagged = models.IntegerField(default=0)
+    num_comments = models.IntegerField(default=0)
+    num_threads_read = models.IntegerField(default=0)
+    num_downvotes = models.IntegerField(default=0)
+    num_upvotes = models.IntegerField(default=0)
+    num_comments_generated = models.IntegerField(default=0)
+
     class Meta:
         """
         Meta information for this Django model
@@ -168,27 +179,6 @@ class StudentSocialEngagementScoreHistory(TimeStampedModel):
     score = models.IntegerField()
 
 
-class StudentSocialEngagementStats(TimeStampedModel):
-    """
-    Stores the social engagement stats for faster access and calculation.
-    """
-    score = models.OneToOneField(
-        StudentSocialEngagementScore,
-        on_delete=models.CASCADE,
-        related_name='stats',
-        primary_key=True
-    )
-    num_threads = models.IntegerField(default=0, db_index=True, null=False)
-    num_thread_followers = models.IntegerField(default=0, db_index=True, null=False)
-    num_replies = models.IntegerField(default=0, db_index=True, null=False)
-    num_flagged = models.IntegerField(default=0, db_index=True, null=False)
-    num_comments = models.IntegerField(default=0, db_index=True, null=False)
-    num_threads_read = models.IntegerField(default=0, db_index=True, null=False)
-    num_downvotes = models.IntegerField(default=0, db_index=True, null=False)
-    num_upvotes = models.IntegerField(default=0, db_index=True, null=False)
-    num_comments_generated = models.IntegerField(default=0, db_index=True, null=False)
-
-
 @receiver(post_save, sender=StudentSocialEngagementScore)
 def on_studentengagementscore_save(sender, instance, created, **kwargs):
     """
@@ -196,9 +186,6 @@ def on_studentengagementscore_save(sender, instance, created, **kwargs):
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
-    if created:
-        StudentSocialEngagementStats.objects.create(score=instance)
-
     invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,
