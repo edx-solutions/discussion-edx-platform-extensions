@@ -3,39 +3,35 @@ Business logic tier regarding social engagement scores
 """
 
 import sys
-from collections import defaultdict
-
-import logging
 from datetime import datetime
-import pytz
+
 import lms.lib.comment_client as cc
-from django.contrib.auth.models import User
-
-from django.http import HttpRequest
-from django.conf import settings
-
-from .models import StudentSocialEngagementScore
-from lms.lib.comment_client.user import get_user_social_stats
-from xmodule.modulestore.django import modulestore
-from opaque_keys.edx.keys import CourseKey
-from student.models import CourseEnrollment
-from lms.lib.comment_client.utils import CommentClientRequestError
-from requests.exceptions import ConnectionError
-
+import logging
+import pytz
+from collections import defaultdict
 from discussion_api.exceptions import CommentNotFoundError, ThreadNotFoundError
-from opaque_keys import InvalidKeyError
-
-from django.dispatch import receiver
+from django.conf import settings
+from django.contrib.auth.models import User
 from django.db.models.signals import post_save, pre_save
-
-from edx_solutions_api_integration.utils import (
-    get_aggregate_exclusion_user_ids,
-)
+from django.dispatch import receiver
+from django.http import HttpRequest
+from edx_notifications.data import NotificationMessage
 from edx_notifications.lib.publisher import (
     publish_notification_to_user,
     get_notification_type
 )
-from edx_notifications.data import NotificationMessage
+from edx_solutions_api_integration.utils import (
+    get_aggregate_exclusion_user_ids,
+)
+from lms.lib.comment_client.user import get_user_social_stats
+from lms.lib.comment_client.utils import CommentClientRequestError
+from opaque_keys import InvalidKeyError
+from opaque_keys.edx.keys import CourseKey
+from requests.exceptions import ConnectionError
+from student.models import CourseEnrollment
+from xmodule.modulestore.django import modulestore
+
+from .models import StudentSocialEngagementScore
 
 log = logging.getLogger(__name__)
 
@@ -286,18 +282,36 @@ def get_involved_users_in_thread(request, thread):
     """
     Compute all the users involved in the children of a specific thread.
     """
-    users = set()
     params = {"thread_id": thread.id, "page_size": 100}
     is_question = True if getattr(thread, "thread_type", None) == "question" else False
+    author_id = getattr(thread, 'username', None)
+    if hasattr(thread, 'username'):
+        author_id = thread.user_id
+
+    results = _detail_results_factory()
+
     if is_question:
         # get users of the non-endorsed comments in thread
         params.update({"endorsed": False})
-        users.update(_get_users_in_thread(_get_request(request, params)))
+        _get_thread_details_for_deletion(_get_request(request, params), results)
         # get users of the endorsed comments in thread
         params.update({"endorsed": True})
-        users.update(_get_users_in_thread(_get_request(request, params)))
+        _get_thread_details_for_deletion(_get_request(request, params), results)
     else:
-        users.update(_get_users_in_thread(_get_request(request, params)))
+        _get_thread_details_for_deletion(_get_request(request, params), results)
+
+    users = results['users']
+    for user, _ in users.items():
+        id_ = int(User.objects.get(username=user).id)
+        users[id_] = users[user]
+        del users[user]
+
+    if author_id:
+        users[author_id]['num_upvotes'] += thread.votes.get('count', 0)
+        users[author_id]['num_threads'] += 1
+        users[author_id]['num_comments_generated'] += results['all_comments']
+        users[author_id]['num_thread_followers'] += thread.get_num_followers()
+
     return users
 
 
@@ -315,8 +329,8 @@ def get_involved_users_in_comment(request, comment):
     results = _get_comment_details_for_deletion(request, comment.id)
     users = results['users']
     for user, _ in users.items():
-        id = int(User.objects.get(username=user).id)
-        users[id] = users[user]
+        id_ = int(User.objects.get(username=user).id)
+        users[id_] = users[user]
         del users[user]
     if author_id:
         users[int(author_id)]['num_replies'] += results['replies']
@@ -388,31 +402,25 @@ def _get_author_of_thread(thread_id):
         return thread.user_id
 
 
-def _get_thread_details_for_deletion(request):
+def _get_thread_details_for_deletion(request, results):
     """
     Get details of thread and related users that are required for deletion purposes.
     """
     from lms.djangoapps.discussion_api.views import CommentViewSet
-    results = {
-        'replies': 0,
-        'users': defaultdict(lambda: defaultdict(int)),
-    }
-
     response_page = 1
     has_results = True
     while has_results:
         try:
             response = CommentViewSet().list(_get_request(request, {"page": response_page}))
-            if results['replies'] == 0:
-                results['replies'] = response.data['pagination']['count']
+            if response_page == 1:
+                results['all_comments'] += response.data['pagination']['count']
 
             for comment in response.data["results"]:
                 results['users'][comment['author']]['num_comments'] += 1
                 results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
 
                 if comment['child_count'] > 0:
-                    results['users'][comment['author']]['num_replies'] += comment['child_count']
-                    _get_comment_details_for_deletion(request, comment['id'], results)
+                    _get_comment_details_for_deletion(request, comment['id'], results, nested=True)
 
             has_results = response.data["pagination"]["next"]
             response_page += 1
@@ -421,16 +429,13 @@ def _get_thread_details_for_deletion(request):
     return results
 
 
-def _get_comment_details_for_deletion(request, comment_id, results=None):
+def _get_comment_details_for_deletion(request, comment_id, results=None, nested=True):
     """
     Get details of comment and related users that are required for deletion purposes.
     """
     from lms.djangoapps.discussion_api.views import CommentViewSet
     if not results:
-        results = {
-            'replies': 0,
-            'users': defaultdict(lambda: defaultdict(int)),
-        }
+        results = _detail_results_factory()
 
     response_page = 1
     has_results = True
@@ -440,16 +445,29 @@ def _get_comment_details_for_deletion(request, comment_id, results=None):
             if results['replies'] == 0:
                 results['replies'] = response.data['pagination']['count']
 
+            if response_page == 1:
+                results['all_comments'] += response.data['pagination']['count']
+
             for comment in response.data["results"]:
-                results['users'][comment['author']]['num_comments'] += 1
+                if not nested:
+                    results['users'][comment['author']]['num_comments'] += 1
+                else:
+                    results['users'][comment['author']]['num_replies'] += 1
                 results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
 
                 if comment['child_count'] > 0:
-                    results['users'][comment['author']]['num_replies'] += comment['child_count']
-                    _get_comment_details_for_deletion(request, comment['id'], results)
+                    _get_comment_details_for_deletion(request, comment['id'], results, nested=True)
 
             has_results = response.data["pagination"]["next"]
             response_page += 1
         except (CommentNotFoundError, InvalidKeyError):
             return results
     return results
+
+
+def _detail_results_factory():
+    return {
+        'replies': 0,
+        'all_comments': 0,
+        'users': defaultdict(lambda: defaultdict(int)),
+    }

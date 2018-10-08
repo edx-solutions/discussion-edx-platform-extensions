@@ -81,7 +81,7 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
             score.score += social_metric_points.get(key, 0) * factor * value
 
             previous = getattr(score, key, 0)
-            setattr(score, key, previous + factor)
+            setattr(score, key, previous + value * factor)
     else:
         score.score += social_metric_points.get(param, 0) * factor
         previous = getattr(score, param, 0)

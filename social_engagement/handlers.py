@@ -86,21 +86,16 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
     action_user = kwargs['user']
 
     if action_user:
-        _increment(action_user.id, course_id, 'num_replies')
+        # a comment is a reply to a thread
+        # a response is a reply to a response
 
-        # a response is a reply to a thread
-        # a comment is a reply to a response
-        is_comment = not thread_id and parent_id
+        # It's a comment
+        if not parent_id:
+            _increment(action_user.id, course_id, 'num_comments')
 
-        if is_comment:
-            # If creating a comment, then we don't have the original thread_id
-            # so we have to get it from the parent
-            comment = cc.Comment.find(parent_id)
-            thread_id = comment.thread_id
-            replying_to_id = comment.user_id
-
-            # update the engagement of the author of the response
-            _increment(replying_to_id, course_id, 'num_comments')
+        # It's a reply
+        else:
+            _increment(action_user.id, course_id, 'num_replies')
 
         if thread_id:
             thread = cc.Thread.find(thread_id)
@@ -108,10 +103,9 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
             # IMPORTANT: we have to use getattr here as
             # otherwise the property will not get fetched
             # from cs_comment_service
-            thread_user_id = int(getattr(thread, 'user_id', 0))
+            thread_user_id = int(getattr(thread, 'user_id', None))
 
-            # update the engagement score of the thread creator
-            # as well
+            # update the engagement score of the thread creator as well
             _increment(thread_user_id, course_id, 'num_comments_generated')
 
 
