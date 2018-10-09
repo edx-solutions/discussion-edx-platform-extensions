@@ -78,7 +78,6 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
         # and so there might be a HTTP based communication error
 
         social_stats = _get_user_social_stats(user_id, slash_course_id, course_descriptor.end)
-        _update_current_data(user_id, course_id, social_stats)
 
         if social_stats:
             current_score = _compute_social_engagement_score(social_stats)
@@ -87,6 +86,8 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
 
             if current_score != previous_score:
                 StudentSocialEngagementScore.save_user_engagement_score(course_key, user_id, current_score)
+
+        _update_current_data(user_id, course_id, social_stats)
 
     except (CommentClientRequestError, ConnectionError), error:
         log.exception(error)
@@ -132,11 +133,15 @@ def _update_current_data(user_id, course_id, social_stats):
     """
     Store data from API.
     """
-    score = StudentSocialEngagementScore.objects.get(user__id=user_id, course_id=course_id)
-    for key, val in social_stats.iteritems():
-        setattr(score, key, val)
+    try:
+        score = StudentSocialEngagementScore.objects.get(user__id=user_id, course_id=course_id)
+        for key, val in social_stats.iteritems():
+            setattr(score, key, val)
 
-    score.save()
+        score.save()
+
+    except StudentSocialEngagementScore.DoesNotExist:
+        pass
 
 
 def _compute_social_engagement_score(social_metrics):
@@ -283,7 +288,7 @@ def get_involved_users_in_thread(request, thread):
     Compute all the users involved in the children of a specific thread.
     """
     params = {"thread_id": thread.id, "page_size": 100}
-    is_question = True if getattr(thread, "thread_type", None) == "question" else False
+    is_question = getattr(thread, "thread_type", None) == "question"
     author_id = getattr(thread, 'username', None)
     if hasattr(thread, 'username'):
         author_id = thread.user_id
@@ -300,11 +305,7 @@ def get_involved_users_in_thread(request, thread):
     else:
         _get_thread_details_for_deletion(_get_request(request, params), results)
 
-    users = results['users']
-    for user, _ in users.items():
-        id_ = int(User.objects.get(username=user).id)
-        users[id_] = users[user]
-        del users[user]
+    users = _extract_users_from_results(results)
 
     if author_id:
         users[author_id]['num_upvotes'] += thread.votes.get('count', 0)
@@ -327,15 +328,35 @@ def get_involved_users_in_comment(request, comment):
         author_id = _get_author_of_thread(comment.thread_id)
 
     results = _get_comment_details_for_deletion(request, comment.id)
-    users = results['users']
-    for user, _ in users.items():
-        id_ = int(User.objects.get(username=user).id)
-        users[id_] = users[user]
-        del users[user]
+    users = _extract_users_from_results(results)
+
     if author_id:
         users[int(author_id)]['num_replies'] += results['replies']
 
     return users
+
+
+def _extract_users_from_results(results):
+    """
+    Helper method for getting involved users from results.
+    """
+    users = results['users']
+    for user in users.keys():
+        id_ = int(User.objects.get(username=user).id)
+        users[id_] = users[user]
+        del users[user]
+    return users
+
+
+def _detail_results_factory():
+    """
+    Helper method to maintain organized result structure while getting involved users.
+    """
+    return {
+        'replies': 0,
+        'all_comments': 0,
+        'users': defaultdict(lambda: defaultdict(int)),
+    }
 
 
 def _get_users_in_thread(request):
@@ -429,7 +450,7 @@ def _get_thread_details_for_deletion(request, results):
     return results
 
 
-def _get_comment_details_for_deletion(request, comment_id, results=None, nested=True):
+def _get_comment_details_for_deletion(request, comment_id, results=None, nested=False):
     """
     Get details of comment and related users that are required for deletion purposes.
     """
@@ -464,10 +485,3 @@ def _get_comment_details_for_deletion(request, comment_id, results=None, nested=
             return results
     return results
 
-
-def _detail_results_factory():
-    return {
-        'replies': 0,
-        'all_comments': 0,
-        'users': defaultdict(lambda: defaultdict(int)),
-    }
