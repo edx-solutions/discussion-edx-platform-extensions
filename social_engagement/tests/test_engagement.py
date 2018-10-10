@@ -21,7 +21,7 @@ from xmodule.modulestore.tests.factories import CourseFactory
 from social_engagement.models import StudentSocialEngagementScore, StudentSocialEngagementScoreHistory
 
 from social_engagement.engagement import update_user_engagement_score, _extract_users_from_results, \
-    _detail_results_factory, _get_comment_details_for_deletion
+    _detail_results_factory, _get_details_for_deletion
 from social_engagement.engagement import update_course_engagement_scores
 from social_engagement.engagement import update_all_courses_engagement_scores
 
@@ -499,7 +499,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         self.assertEqual(users[self.user.id]['num_upvotes'], num_upvotes)
         self.assertEqual(users[self.user2.id]['num_comments'], num_comments)
 
-    def test__get_comment_details_for_deletion(self):
+    def test__get_details_for_deletion(self):
         """
         Test getting comment stats that should be decremented.
         """
@@ -552,10 +552,10 @@ class StudentEngagementTests(ModuleStoreTestCase):
             with patch('lms.djangoapps.discussion_api.views.CommentViewSet.retrieve') as mock_func2:
                 mock_func2.return_value = mock_response
 
-                results = _get_comment_details_for_deletion(None, None)
+                results = _get_details_for_deletion(None, None)
                 self.assertEqual(results, expected)
 
-    def test__get_comment_details_for_deletion_with_replies(self):
+    def test__get_details_for_deletion_with_replies(self):
         """
         Test getting stats of comment with nested comments.
         """
@@ -622,5 +622,5 @@ class StudentEngagementTests(ModuleStoreTestCase):
             with patch('lms.djangoapps.discussion_api.views.CommentViewSet.retrieve') as mock_func2:
                 mock_func2.side_effect = [mock_response, mock_response2]
 
-                results = _get_comment_details_for_deletion(None, None)
+                results = _get_details_for_deletion(None, None)
                 self.assertEqual(results, expected)

@@ -298,12 +298,12 @@ def get_involved_users_in_thread(request, thread):
     if is_question:
         # get users of the non-endorsed comments in thread
         params.update({"endorsed": False})
-        _get_thread_details_for_deletion(_get_request(request, params), results)
+        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
         # get users of the endorsed comments in thread
         params.update({"endorsed": True})
-        _get_thread_details_for_deletion(_get_request(request, params), results)
+        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
     else:
-        _get_thread_details_for_deletion(_get_request(request, params), results)
+        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
 
     users = _extract_users_from_results(results)
 
@@ -321,13 +321,14 @@ def get_involved_users_in_comment(request, comment):
     Method used to extract the involved users in the comment.
     This method also returns the creator of the post.
     """
+    params = {"page_size": 100}
     author_id = None
     if hasattr(comment, 'parent_id'):
         author_id = _get_author_of_comment(comment.parent_id)
     if hasattr(comment, 'thread_id'):
         author_id = _get_author_of_thread(comment.thread_id)
 
-    results = _get_comment_details_for_deletion(request, comment.id)
+    results = _get_details_for_deletion(_get_request(request, params), comment.id)
     users = _extract_users_from_results(results)
 
     if author_id:
@@ -423,65 +424,57 @@ def _get_author_of_thread(thread_id):
         return thread.user_id
 
 
-def _get_thread_details_for_deletion(request, results):
+def _get_details_for_deletion(request, comment_id, results=None, nested=False, is_thread=False):
     """
-    Get details of thread and related users that are required for deletion purposes.
+    Get details of comment or thread and related users that are required for deletion purposes.
     """
-    from lms.djangoapps.discussion_api.views import CommentViewSet
-    response_page = 1
-    has_results = True
-    while has_results:
-        try:
-            response = CommentViewSet().list(_get_request(request, {"page": response_page}))
-            if response_page == 1:
-                results['all_comments'] += response.data['pagination']['count']
-
-            for comment in response.data["results"]:
-                results['users'][comment['author']]['num_comments'] += 1
-                results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
-
-                if comment['child_count'] > 0:
-                    _get_comment_details_for_deletion(request, comment['id'], results, nested=True)
-
-            has_results = response.data["pagination"]["next"]
-            response_page += 1
-        except (ThreadNotFoundError, InvalidKeyError):
-            return results
-    return results
-
-
-def _get_comment_details_for_deletion(request, comment_id, results=None, nested=False):
-    """
-    Get details of comment and related users that are required for deletion purposes.
-    """
-    from lms.djangoapps.discussion_api.views import CommentViewSet
     if not results:
         results = _detail_results_factory()
 
-    response_page = 1
-    has_results = True
-    while has_results:
-        try:
-            response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
+    for page, response in enumerate(_get_paginated_results(request, comment_id, is_thread)):
+            if page == 0:
+                results['all_comments'] += response.data['pagination']['count']
+
             if results['replies'] == 0:
                 results['replies'] = response.data['pagination']['count']
 
-            if response_page == 1:
-                results['all_comments'] += response.data['pagination']['count']
-
             for comment in response.data["results"]:
-                if not nested:
-                    results['users'][comment['author']]['num_comments'] += 1
-                else:
-                    results['users'][comment['author']]['num_replies'] += 1
-                results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
+                _extract_stats_from_comment(request, comment, results, nested)
 
-                if comment['child_count'] > 0:
-                    _get_comment_details_for_deletion(request, comment['id'], results, nested=True)
-
-            has_results = response.data["pagination"]["next"]
-            response_page += 1
-        except (CommentNotFoundError, InvalidKeyError):
-            return results
     return results
 
+
+def _get_paginated_results(request, comment_id, is_thread):
+    """
+    Yield paginated comments of comment or thread.
+    """
+    from lms.djangoapps.discussion_api.views import CommentViewSet
+
+    response_page = 1
+    has_next = True
+    while has_next:
+        try:
+            if is_thread:
+                response = CommentViewSet().list(_get_request(request, {"page": response_page}))
+            else:
+                response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
+        except (CommentNotFoundError, InvalidKeyError):
+            raise StopIteration
+
+        has_next = response.data["pagination"]["next"]
+        response_page += 1
+        yield response
+
+
+def _extract_stats_from_comment(request, comment, results, nested):
+    """
+    Extract results from comment and its nested comments.
+    """
+    if not nested:
+        results['users'][comment['author']]['num_comments'] += 1
+    else:
+        results['users'][comment['author']]['num_replies'] += 1
+    results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
+
+    if comment['child_count'] > 0:
+        _get_details_for_deletion(request, comment['id'], results, nested=True)
