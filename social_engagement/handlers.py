@@ -9,9 +9,9 @@ from django_comment_common.signals import (
     thread_deleted,
     comment_deleted,
     thread_voted,
-    comment_voted,
     thread_followed,
     thread_unfollowed,
+    thread_or_comment_flagged,
 )
 import lms.lib.comment_client as cc
 from social_engagement.tasks import task_handle_change_after_signal
@@ -21,7 +21,7 @@ from social_engagement.tasks import task_handle_change_after_signal
 @receiver(thread_voted)
 def thread_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for deleted and voted thread.
+    Updates user social engagement score for deleted and voted thread (or voted comment).
     TODO: And also, for some reason, on voted comment.
     """
     thread = kwargs['post']
@@ -34,7 +34,7 @@ def thread_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
         for user, user_data in users.items():
             _decrement(user, course_id, user_data)
 
-    # thread voted
+    # thread or comment voted
     else:
         change = _decrement if kwargs.get('undo') else _increment
         change(user_id, course_id, 'num_upvotes')
@@ -53,25 +53,18 @@ def thread_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-a
         _increment(action_user.id, course_id, 'num_threads')
 
 
-@receiver(comment_deleted)  # TODO - WTF - the thread_voted signal is also sent here o.O
-@receiver(comment_voted)
-def comment_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
+@receiver(comment_deleted)
+def comment_deleted_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for deleted (and voted) comment.
+    Updates user social engagement score for deleted comment.
     """
     post = kwargs['post']
     course_id = getattr(post, 'course_id', None)
 
-    # present if comment_deleted
     if 'involved_users' in kwargs:
         users = kwargs['involved_users']
         for user, user_data in users.items():
             _decrement(user, course_id, user_data)
-
-    # comment voted
-    # TODO: investigate - it looks like the thread_voted signal is also sent with comment_voted
-    # else:
-    #     _increment(user_id, course_id, 'num_upvotes')
 
 
 @receiver(comment_created)
@@ -135,6 +128,16 @@ def thread_unfollow_signal_handler(sender, **kwargs):  # pylint: disable=unused-
 
     if user_id and action_user.id != int(user_id):
         _decrement(user_id, course_id, 'num_thread_followers')
+
+
+@receiver(thread_or_comment_flagged)
+def thread_or_comment_flagged_handler(sender, **kwargs):  # pylint: disable=unused-argument
+    thread_or_comment = kwargs['post']
+    course_id = getattr(thread_or_comment, 'course_id', None)
+    user_id = getattr(thread_or_comment, 'user_id', None)
+
+    change = _decrement if kwargs.get('undo') else _increment
+    change(user_id, course_id, 'num_flagged')
 
 
 def _increment(*args, **kwargs):

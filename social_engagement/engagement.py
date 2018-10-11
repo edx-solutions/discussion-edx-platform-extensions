@@ -475,6 +475,7 @@ def _extract_stats_from_comment(request, comment, results, nested):
     else:
         results['users'][comment['author']]['num_replies'] += 1
     results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
+    results['users'][comment['author']]['num_flagged'] += int(comment['abuse_flagged'])
 
     if comment['child_count'] > 0:
         _get_details_for_deletion(request, comment['id'], results, nested=True)

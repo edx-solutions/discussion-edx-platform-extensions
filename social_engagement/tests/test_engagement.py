@@ -515,6 +515,8 @@ class StudentEngagementTests(ModuleStoreTestCase):
         expected['users'][self.user2.username]['num_upvotes'] = comment2_votes
         expected['users'][self.user.username]['num_comments'] = 2
         expected['users'][self.user2.username]['num_comments'] = 1
+        expected['users'][self.user.username]['num_flagged'] = 0
+        expected['users'][self.user2.username]['num_flagged'] = 1
 
         class MockResponse(object):
             pass
@@ -540,7 +542,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
                 },
                 {
                     'author': self.user2.username,
-                    'abuse_flagged': False,
+                    'abuse_flagged': True,
                     'vote_count': comment2_votes,
                     'child_count': 0,
                 },
@@ -569,6 +571,8 @@ class StudentEngagementTests(ModuleStoreTestCase):
         expected['users'][self.user.username]['num_comments'] = 1
         expected['users'][self.user.username]['num_replies'] = 1
         expected['users'][self.user2.username]['num_replies'] = 2
+        expected['users'][self.user.username]['num_flagged'] = 0
+        expected['users'][self.user2.username]['num_flagged'] = 2
 
         class MockResponse(object):
             pass
@@ -604,13 +608,13 @@ class StudentEngagementTests(ModuleStoreTestCase):
                 },
                 {
                     'author': self.user2.username,
-                    'abuse_flagged': False,
+                    'abuse_flagged': True,
                     'vote_count': 0,
                     'child_count': 0,
                 },
                 {
                     'author': self.user2.username,
-                    'abuse_flagged': False,
+                    'abuse_flagged': True,
                     'vote_count': 0,
                     'child_count': 0,
                 },
