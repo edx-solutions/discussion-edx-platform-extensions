@@ -124,6 +124,16 @@ class StudentEngagementTests(ModuleStoreTestCase):
             0
         )
 
+    def test_get_user_engagements_stats(self):
+        """
+        Verify that stats are complete.
+        """
+        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user.id, 100)
+        stats = StudentSocialEngagementScore.get_user_engagements_stats(self.course.id, self.user.id)
+        self.assertEqual(len(stats), 9)
+        for key in stats.keys():
+            self.assertTrue(key.startswith('num_'))
+
     def test_save_first_engagement_score(self):
         """
         Basic write operation

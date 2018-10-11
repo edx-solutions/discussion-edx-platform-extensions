@@ -57,6 +57,18 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return entry.score
 
     @classmethod
+    def get_user_engagements_stats(cls, course_key, user_id):
+        """
+        Returns user's stats as a dict.
+        """
+        try:
+            entry = cls.objects.get(course_id__exact=course_key, user__id=user_id)
+        except cls.DoesNotExist:
+            return None
+
+        return {k: v for k, v in entry.__dict__.items() if k.startswith('num_')}
+
+    @classmethod
     def get_course_average_engagement_score(cls, course_key, exclude_users=None):
         """
         Returns the course average engagement score.
