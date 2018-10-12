@@ -116,7 +116,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return data
 
     @classmethod
-    def generate_leaderboard(cls, course_key, count=3, exclude_users=None, org_ids=None):
+    def generate_leaderboard(cls, course_key, count=3, exclude_users=None, org_ids=None, cohort_user_ids=None):
         """
         Assembles a data set representing the Top N users, by progress, for a given course.
 
@@ -139,11 +139,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
         if org_ids:
             queryset = queryset.filter(user__organizations__in=org_ids)
 
+        if cohort_user_ids:
+            queryset = queryset.filter(user_id__in=cohort_user_ids)
+
         aggregates = queryset.aggregate(Sum('score'))
         course_avg = total_user_count = 0
         total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
         if total_score:
-            total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            total_user_queryset = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users)
+            if cohort_user_ids:
+                total_user_queryset = total_user_queryset.filter(id__in=cohort_user_ids)
+            total_user_count = total_user_queryset.count()
             course_avg = int(round(total_score / float(total_user_count)))
 
         if count:
