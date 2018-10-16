@@ -323,12 +323,19 @@ def get_involved_users_in_comment(request, comment):
     if hasattr(comment, 'thread_id'):
         thread_author_id = _get_author_of_thread(comment.thread_id)
 
-    results = _get_details_for_deletion(_get_request(request, params), comment.id)
+    results = _get_details_for_deletion(_get_request(request, params), comment.id, nested=True)
     users = results['users']
 
     if comment_author_id:
         users[comment_author_id]['num_upvotes'] += comment.votes.get('count', 0)
-        users[comment_author_id]['num_comments'] += 1
+
+        if getattr(comment, 'parent_id', None):
+            # It's a reply.
+            users[comment_author_id]['num_replies'] += 1
+        else:
+            # It's a comment.
+            users[comment_author_id]['num_comments'] += 1
+
         if comment.abuse_flaggers:
             users[comment_author_id]['num_flagged'] += 1
 
