@@ -4,7 +4,6 @@ This module has implementation of celery tasks for discussion forum use cases
 import logging
 
 from celery.task import task
-from django.conf import settings
 
 from student.models import CourseEnrollment
 from xmodule.modulestore.django import modulestore
@@ -66,9 +65,6 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
     :param param: `str` with stat that should be changed or
                   `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed
     """
-    if not (settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT') and user_id and course_id):
-        return
-
     factor = items if increment else -items
     social_metric_points = get_social_metric_points()
 

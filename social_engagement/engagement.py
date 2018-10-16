@@ -85,9 +85,9 @@ def update_user_engagement_score(course_id, user_id, compute_if_closed_course=Fa
             log.info('previous_score = {}  current_score = {}'.format(previous_score, current_score))
 
             if current_score != previous_score:
-                StudentSocialEngagementScore.save_user_engagement_score(course_key, user_id, current_score)
-
-        _update_current_data(user_id, course_id, social_stats)
+                StudentSocialEngagementScore.save_user_engagement_score(
+                    course_key, user_id, current_score, social_stats
+                )
 
     except (CommentClientRequestError, ConnectionError), error:
         log.exception(error)
@@ -97,8 +97,6 @@ def get_social_metric_points():
     """
     Get custom or default social metric points.
     """
-    # we can override this in configuration, but this
-    # is default values
     return getattr(
         settings,
         'SOCIAL_METRIC_POINTS',
@@ -129,9 +127,9 @@ def _get_user_social_stats(user_id, slash_course_id, end_date):
         return None
 
 
-def _update_current_data(user_id, course_id, social_stats):
+def _update_social_stats(user_id, course_id, social_stats):
     """
-    Store data from API.
+    Store social stats from API.
     """
     try:
         score = StudentSocialEngagementScore.objects.get(user__id=user_id, course_id=course_id)
@@ -148,9 +146,6 @@ def _compute_social_engagement_score(social_metrics):
     """
     For a list of social_stats, compute the social score
     """
-
-    # we can override this in configuration, but this
-    # is default values
     social_metric_points = get_social_metric_points()
 
     social_total = 0
@@ -289,29 +284,30 @@ def get_involved_users_in_thread(request, thread):
     """
     params = {"thread_id": thread.id, "page_size": 100}
     is_question = getattr(thread, "thread_type", None) == "question"
-    author_id = getattr(thread, 'username', None)
-    if hasattr(thread, 'username'):
-        author_id = thread.user_id
-
+    author_id = getattr(thread, 'user_id', None)
     results = _detail_results_factory()
 
     if is_question:
         # get users of the non-endorsed comments in thread
         params.update({"endorsed": False})
-        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
+        _get_details_for_deletion(_get_request(request, params), results=results, is_thread=True)
         # get users of the endorsed comments in thread
-        params.update({"endorsed": True})
-        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
+        if getattr(thread, 'has_endorsed', False):
+            params.update({"endorsed": True})
+            _get_details_for_deletion(_get_request(request, params), results=results, is_thread=True)
     else:
-        _get_details_for_deletion(_get_request(request, params), results, is_thread=True)
+        _get_details_for_deletion(_get_request(request, params), results=results, is_thread=True)
 
-    users = _extract_users_from_results(results)
+    users = results['users']
+    print(users)
 
     if author_id:
         users[author_id]['num_upvotes'] += thread.votes.get('count', 0)
         users[author_id]['num_threads'] += 1
         users[author_id]['num_comments_generated'] += results['all_comments']
         users[author_id]['num_thread_followers'] += thread.get_num_followers()
+        if thread.abuse_flaggers:
+            users[author_id]['num_flagged'] += 1
 
     return users
 
@@ -322,30 +318,23 @@ def get_involved_users_in_comment(request, comment):
     This method also returns the creator of the post.
     """
     params = {"page_size": 100}
-    author_id = None
-    if hasattr(comment, 'parent_id'):
-        author_id = _get_author_of_comment(comment.parent_id)
+    comment_author_id = getattr(comment, 'user_id', None)
+    thread_author_id = None
     if hasattr(comment, 'thread_id'):
-        author_id = _get_author_of_thread(comment.thread_id)
+        thread_author_id = _get_author_of_thread(comment.thread_id)
 
     results = _get_details_for_deletion(_get_request(request, params), comment.id)
-    users = _extract_users_from_results(results)
-
-    if author_id:
-        users[int(author_id)]['num_replies'] += results['replies']
-
-    return users
-
-
-def _extract_users_from_results(results):
-    """
-    Helper method for getting involved users from results.
-    """
     users = results['users']
-    for user in users.keys():
-        id_ = int(User.objects.get(username=user).id)
-        users[id_] = users[user]
-        del users[user]
+
+    if comment_author_id:
+        users[comment_author_id]['num_upvotes'] += comment.votes.get('count', 0)
+        users[comment_author_id]['num_comments'] += 1
+        if comment.abuse_flaggers:
+            users[comment_author_id]['num_flagged'] += 1
+
+    if thread_author_id:
+        users[thread_author_id]['num_comments_generated'] += results['replies'] + 1
+
     return users
 
 
@@ -424,7 +413,7 @@ def _get_author_of_thread(thread_id):
         return thread.user_id
 
 
-def _get_details_for_deletion(request, comment_id, results=None, nested=False, is_thread=False):
+def _get_details_for_deletion(request, comment_id=None, results=None, nested=False, is_thread=False):
     """
     Get details of comment or thread and related users that are required for deletion purposes.
     """
@@ -438,7 +427,7 @@ def _get_details_for_deletion(request, comment_id, results=None, nested=False, i
             if results['replies'] == 0:
                 results['replies'] = response.data['pagination']['count']
 
-            for comment in response.data["results"]:
+            for comment in response.data['results']:
                 _extract_stats_from_comment(request, comment, results, nested)
 
     return results
@@ -470,12 +459,15 @@ def _extract_stats_from_comment(request, comment, results, nested):
     """
     Extract results from comment and its nested comments.
     """
+    user_id = comment.serializer.instance['user_id']
+
     if not nested:
-        results['users'][comment['author']]['num_comments'] += 1
+        results['users'][user_id]['num_comments'] += 1
     else:
-        results['users'][comment['author']]['num_replies'] += 1
-    results['users'][comment['author']]['num_upvotes'] += comment['vote_count']
-    results['users'][comment['author']]['num_flagged'] += int(comment['abuse_flagged'])
+        results['users'][user_id]['num_replies'] += 1
+    results['users'][user_id]['num_upvotes'] += comment['vote_count']
+    if comment.serializer.instance['abuse_flaggers']:
+        results['users'][user_id]['num_flagged'] += 1
 
     if comment['child_count'] > 0:
         _get_details_for_deletion(request, comment['id'], results, nested=True)

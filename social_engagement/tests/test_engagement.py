@@ -20,8 +20,8 @@ from xmodule.modulestore.tests.factories import CourseFactory
 
 from social_engagement.models import StudentSocialEngagementScore, StudentSocialEngagementScoreHistory
 
-from social_engagement.engagement import update_user_engagement_score, _extract_users_from_results, \
-    _detail_results_factory, _get_details_for_deletion
+from social_engagement.engagement import update_user_engagement_score, _detail_results_factory, \
+    _get_details_for_deletion
 from social_engagement.engagement import update_course_engagement_scores
 from social_engagement.engagement import update_all_courses_engagement_scores
 
@@ -483,33 +483,23 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
             self.assertEqual(get_notifications_count_for_user(self.user.id), 0)
 
-    def test__extract_users_from_results(self):
-        """
-        Verifies that dict with usernames is translated correctly to dict with IDs.
-        :return:
-        """
-        num_upvotes = 2
-        num_comments = 10
+    class MockResponse(object):
+        pass
 
-        results = {
-            'replies': 0,
-            'all_comments': 0,
-            'users': {
-                self.user.username: {
-                    'num_upvotes': num_upvotes,
-                },
-                self.user2.username: {
-                    'num_comments': num_comments,
-                },
-            }
-        }
+    class MockData(dict):
+        def __init__(self, **kwargs):
+            super(StudentEngagementTests.MockData, self).__init__(**kwargs)
+            for key, value in kwargs.items():
+                self[key] = value
 
-        users = _extract_users_from_results(results)
+        def __getattr__(self, item):
+            return self.get(item)
 
-        self.assertEqual(users[self.user.id]['num_upvotes'], num_upvotes)
-        self.assertEqual(users[self.user2.id]['num_comments'], num_comments)
+    class MockSerializer(object):
+        def __init__(self, user_id, flags):
+            self.instance = {'user_id': user_id, 'abuse_flaggers': flags}
 
-    def test__get_details_for_deletion(self):
+    def test_get_details_for_deletion(self):
         """
         Test getting comment stats that should be decremented.
         """
@@ -521,41 +511,34 @@ class StudentEngagementTests(ModuleStoreTestCase):
         expected = _detail_results_factory()
         expected['replies'] = comments
         expected['all_comments'] = comments
-        expected['users'][self.user.username]['num_upvotes'] = comment1_votes + comment1_votes2
-        expected['users'][self.user2.username]['num_upvotes'] = comment2_votes
-        expected['users'][self.user.username]['num_comments'] = 2
-        expected['users'][self.user2.username]['num_comments'] = 1
-        expected['users'][self.user.username]['num_flagged'] = 0
-        expected['users'][self.user2.username]['num_flagged'] = 1
+        expected['users'][self.user.id]['num_upvotes'] = comment1_votes + comment1_votes2
+        expected['users'][self.user2.id]['num_upvotes'] = comment2_votes
+        expected['users'][self.user.id]['num_comments'] = 2
+        expected['users'][self.user2.id]['num_comments'] = 1
+        expected['users'][self.user2.id]['num_flagged'] = 1
 
-        class MockResponse(object):
-            pass
-
-        mock_response = MockResponse()
+        mock_response = self.MockResponse()
         mock_response.data = {
             'pagination': {
                 'count': comments,
                 'next': None
             },
             'results': [
-                {
-                    'author': self.user.username,
-                    'abuse_flagged': False,  # might be used later
+                self.MockData(**{
                     'vote_count': comment1_votes,
                     'child_count': 0,
-                },
-                {
-                    'author': self.user.username,
-                    'abuse_flagged': False,
+                    'serializer': self.MockSerializer(self.user.id, 0),
+                }),
+                self.MockData(**{
                     'vote_count': comment1_votes2,
                     'child_count': 0,
-                },
-                {
-                    'author': self.user2.username,
-                    'abuse_flagged': True,
+                    'serializer': self.MockSerializer(self.user.id, 0),
+                }),
+                self.MockData(**{
                     'vote_count': comment2_votes,
                     'child_count': 0,
-                },
+                    'serializer': self.MockSerializer(self.user2.id, 1),
+                }),
             ],
         }
 
@@ -567,7 +550,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
                 results = _get_details_for_deletion(None, None)
                 self.assertEqual(results, expected)
 
-    def test__get_details_for_deletion_with_replies(self):
+    def test_get_details_for_deletion_with_replies(self):
         """
         Test getting stats of comment with nested comments.
         """
@@ -576,58 +559,52 @@ class StudentEngagementTests(ModuleStoreTestCase):
         expected = _detail_results_factory()
         expected['replies'] = 1
         expected['all_comments'] = 4
-        expected['users'][self.user.username]['num_upvotes'] = comment_votes
-        expected['users'][self.user2.username]['num_upvotes'] = 0
-        expected['users'][self.user.username]['num_comments'] = 1
-        expected['users'][self.user.username]['num_replies'] = 1
-        expected['users'][self.user2.username]['num_replies'] = 2
-        expected['users'][self.user.username]['num_flagged'] = 0
-        expected['users'][self.user2.username]['num_flagged'] = 2
+        expected['users'][self.user.id]['num_upvotes'] = comment_votes
+        expected['users'][self.user2.id]['num_upvotes'] = 0
+        expected['users'][self.user.id]['num_comments'] = 1
+        expected['users'][self.user.id]['num_replies'] = 1
+        expected['users'][self.user2.id]['num_replies'] = 2
+        expected['users'][self.user2.id]['num_flagged'] = 2
 
-        class MockResponse(object):
-            pass
-
-        mock_response = MockResponse()
+        mock_response = self.MockResponse()
         mock_response.data = {
             'pagination': {
                 'count': 1,
                 'next': None
             },
             'results': [
-                {
+                self.MockData(**{
                     'id': '1234',
                     'author': self.user.username,
-                    'abuse_flagged': False,  # might be used later
                     'vote_count': comment_votes,
                     'child_count': 1,
-                },
+                    'serializer': self.MockSerializer(self.user.id, 0),
+                }),
             ],
         }
-        mock_response2 = MockResponse()
+
+        mock_response2 = self.MockResponse()
         mock_response2.data = {
             'pagination': {
                 'count': 3,
                 'next': None
             },
             'results': [
-                {
-                    'author': self.user.username,
-                    'abuse_flagged': False,
+                self.MockData(**{
                     'vote_count': 0,
                     'child_count': 0,
-                },
-                {
-                    'author': self.user2.username,
-                    'abuse_flagged': True,
+                    'serializer': self.MockSerializer(self.user.id, 0),
+                }),
+                self.MockData(**{
                     'vote_count': 0,
                     'child_count': 0,
-                },
-                {
-                    'author': self.user2.username,
-                    'abuse_flagged': True,
+                    'serializer': self.MockSerializer(self.user2.id, 1),
+                }),
+                self.MockData(**{
                     'vote_count': 0,
                     'child_count': 0,
-                },
+                    'serializer': self.MockSerializer(self.user2.id, 1),
+                }),
             ],
         }
 

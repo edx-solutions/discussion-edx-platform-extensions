@@ -1,6 +1,7 @@
 """
 Discussion forum signal handlers
 """
+from django.conf import settings
 from django.dispatch import receiver
 
 from django_comment_common.signals import (
@@ -80,7 +81,7 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
 
     if action_user:
         # a comment is a reply to a thread
-        # a response is a reply to a response
+        # a response is a reply to a comment or a response
 
         # It's a comment
         if not parent_id:
@@ -103,23 +104,24 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
 
 
 @receiver(thread_followed)
-def thread_follow_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
+def thread_followed_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score
+    Updates user social engagement score for followed thread.
     """
-    thread = kwargs['post']
-    course_id = getattr(thread, 'course_id', None)
-    user_id = getattr(thread, 'user_id', None)
-    action_user = kwargs['user']  # user who followed or un-followed thread
-
-    if user_id and action_user.id != int(user_id):
-        _increment(user_id, course_id, 'num_thread_followers')
+    _thread_followed_or_unfollowed_handler(followed=True, **kwargs)
 
 
 @receiver(thread_unfollowed)
-def thread_unfollow_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
+def thread_unfollowed_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score
+    Updates user social engagement score for un-followed thread.
+    """
+    _thread_followed_or_unfollowed_handler(**kwargs)
+
+
+def _thread_followed_or_unfollowed_handler(**kwargs):
+    """
+    Updates user social engagement score for followed or un-followed thread.
     """
     thread = kwargs['post']
     course_id = getattr(thread, 'course_id', None)
@@ -127,7 +129,10 @@ def thread_unfollow_signal_handler(sender, **kwargs):  # pylint: disable=unused-
     action_user = kwargs['user']  # user who followed or un-followed thread
 
     if user_id and action_user.id != int(user_id):
-        _decrement(user_id, course_id, 'num_thread_followers')
+        if kwargs.get('followed'):
+            _increment(user_id, course_id, 'num_thread_followers')
+        else:
+            _decrement(user_id, course_id, 'num_thread_followers')
 
 
 @receiver(thread_or_comment_flagged)
@@ -144,11 +149,22 @@ def _increment(*args, **kwargs):
     """
     A facade for handling incrementation.
     """
-    task_handle_change_after_signal.delay(*args, **kwargs)
+    _handle_change_after_signal(*args, **kwargs)
 
 
 def _decrement(*args, **kwargs):
     """
     A facade for handling decrementation.
     """
-    task_handle_change_after_signal.delay(*args, increment=False, **kwargs)
+    _handle_change_after_signal(*args, increment=False, **kwargs)
+
+
+def _handle_change_after_signal(user_id, course_id, param, increment=True, items=1):
+    """
+    Validate settings and input and run Celery task for saving changed parameters.
+
+    :param param: `str` with stat that should be changed or
+                  `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed
+    """
+    if settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT') and user_id and course_id:
+        task_handle_change_after_signal.delay(user_id, course_id, param, increment, items)

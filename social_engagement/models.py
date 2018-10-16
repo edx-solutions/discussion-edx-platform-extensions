@@ -42,6 +42,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         unique_together = (('user', 'course_id'),)
 
+    @property
+    def stats(self):
+        """
+        Returns a dictionary containing all statistics.
+        """
+        return {
+            stat: value
+            for stat, value in self.__dict__.items()
+            if stat.startswith('num_')
+        }
+
     @classmethod
     def get_user_engagement_score(cls, course_key, user_id):
         """
@@ -57,16 +68,15 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return entry.score
 
     @classmethod
-    def get_user_engagements_stats(cls, course_key, user_id):
+    def get_user_engagements_stats(cls, course_key, user_id, default=None):
         """
-        Returns user's stats as a dict.
+        Returns user's statistics as a dictionary.
+        If record does not exist, it returns `default`.
         """
         try:
-            entry = cls.objects.get(course_id__exact=course_key, user__id=user_id)
+            return cls.objects.get(course_id__exact=course_key, user__id=user_id).stats
         except cls.DoesNotExist:
-            return None
-
-        return {k: v for k, v in entry.__dict__.items() if k.startswith('num_')}
+            return default
 
     @classmethod
     def get_course_average_engagement_score(cls, course_key, exclude_users=None):
@@ -94,16 +104,15 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return avg_score
 
     @classmethod
-    def save_user_engagement_score(cls, course_key, user_id, score):
+    def save_user_engagement_score(cls, course_key, user_id, score, stats=None):
         """
         Creates or updates an engagement score
         """
+        stats = stats or {}
         cls.objects.update_or_create(
             course_id=course_key,
             user_id=user_id,
-            defaults={
-                "score": score,
-            }
+            defaults=dict(score=score, **stats)
         )
 
     @classmethod
