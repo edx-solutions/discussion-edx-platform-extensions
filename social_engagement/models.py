@@ -71,12 +71,20 @@ class StudentSocialEngagementScore(TimeStampedModel):
     def get_user_engagements_stats(cls, course_key, user_id, default=None):
         """
         Returns user's statistics as a dictionary.
-        If record does not exist, it returns `default`.
+        If record does not exist, it returns `default` if specified
+        or else a dictionary containing statistics with their default values.
         """
         try:
             return cls.objects.get(course_id__exact=course_key, user__id=user_id).stats
         except cls.DoesNotExist:
-            return default
+            if default is not None:
+                return default
+
+            return {
+                stat.name: stat.default
+                for stat in cls._meta.fields
+                if stat.name.startswith('num_')
+            }
 
     @classmethod
     def get_course_average_engagement_score(cls, course_key, exclude_users=None):
