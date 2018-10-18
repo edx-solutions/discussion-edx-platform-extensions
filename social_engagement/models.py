@@ -84,7 +84,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         )
 
     @classmethod
-    def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None):
+    def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None, cohort_user_ids=None):
         """
         Returns user's progress position and completions for a given course.
         data = {"score": 22, "position": 4}
@@ -109,6 +109,9 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
             if exclude_users:
                 query = query.exclude(user__id__in=exclude_users)
+
+            if cohort_user_ids:
+                query = query.filter(user_id__in=cohort_user_ids)
 
             users_above = query.count()
             data['position'] = users_above + 1 if user_score > 0 else 0
