@@ -124,7 +124,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         )
 
     @classmethod
-    def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None):
+    def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None, cohort_user_ids=None):
         """
         Returns user's progress position and completions for a given course.
         data = {"score": 22, "position": 4}
@@ -150,13 +150,16 @@ class StudentSocialEngagementScore(TimeStampedModel):
             if exclude_users:
                 query = query.exclude(user__id__in=exclude_users)
 
+            if cohort_user_ids:
+                query = query.filter(user_id__in=cohort_user_ids)
+
             users_above = query.count()
             data['position'] = users_above + 1 if user_score > 0 else 0
             data['score'] = user_score
         return data
 
     @classmethod
-    def generate_leaderboard(cls, course_key, count=3, exclude_users=None, org_ids=None):
+    def generate_leaderboard(cls, course_key, count=3, exclude_users=None, org_ids=None, cohort_user_ids=None):
         """
         Assembles a data set representing the Top N users, by progress, for a given course.
 
@@ -179,11 +182,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
         if org_ids:
             queryset = queryset.filter(user__organizations__in=org_ids)
 
+        if cohort_user_ids:
+            queryset = queryset.filter(user_id__in=cohort_user_ids)
+
         aggregates = queryset.aggregate(Sum('score'))
         course_avg = total_user_count = 0
         total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
         if total_score:
-            total_user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            total_user_queryset = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users)
+            if cohort_user_ids:
+                total_user_queryset = total_user_queryset.filter(id__in=cohort_user_ids)
+            total_user_count = total_user_queryset.count()
             course_avg = int(round(total_score / float(total_user_count)))
 
         if count:
