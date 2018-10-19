@@ -257,7 +257,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             queryset = queryset.filter(organizations__in=kwargs.get('org_ids'))
 
         if kwargs.get('cohort_user_ids'):
-            queryset = queryset.filter(user_id__in=kwargs.get('cohort_user_ids'))
+            queryset = queryset.filter(id__in=kwargs.get('cohort_user_ids'))
 
         return queryset
 
