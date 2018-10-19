@@ -165,6 +165,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             - `exclude_users`
             - `group_ids`
             - `org_ids`
+            - `cohort_user_ids`
 
         :returns data = [
             {'id': 123, 'username': 'testuser1', 'title', 'Engineer', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 80},
@@ -228,6 +229,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             queryset = queryset.filter(user__groups__in=kwargs.get('group_ids')).distinct()
 
         if kwargs.get('org_ids'):
+            queryset = queryset.filter(user__organizations__in=kwargs.get('org_ids'))
             queryset = queryset.filter(user__organizations__in=kwargs.get('org_ids'))
 
         if kwargs.get('cohort_user_ids'):
