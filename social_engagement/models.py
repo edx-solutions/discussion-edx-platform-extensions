@@ -12,7 +12,6 @@ from model_utils.models import TimeStampedModel
 from edx_solutions_api_integration.utils import (
     invalid_user_data_cache,
 )
-from student.models import CourseEnrollment
 from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
 from student.models import CourseEnrollment
 
@@ -124,14 +123,21 @@ class StudentSocialEngagementScore(TimeStampedModel):
         )
 
     @classmethod
-    def get_user_leaderboard_position(cls, course_key, user_id, exclude_users=None, cohort_user_ids=None):
+    def get_user_leaderboard_position(cls, course_key, **kwargs):
         """
         Returns user's progress position and completions for a given course.
-        data = {"score": 22, "position": 4}
+        :param kwargs:
+            - `user_id`
+            - `exclude_users`
+            - `group_ids`
+            - `org_ids`
+            - `cohort_user_ids`
+
+        :returns data = {"score": 22, "position": 4}
         """
         data = {"score": 0, "position": 0}
         try:
-            queryset = cls.objects.get(course_id__exact=course_key, user__id=user_id)
+            queryset = cls.objects.get(course_id__exact=course_key, user__id=kwargs.get('user_id'))
         except cls.DoesNotExist:
             queryset = None
 
@@ -139,72 +145,119 @@ class StudentSocialEngagementScore(TimeStampedModel):
             user_score = queryset.score
             user_time_scored = queryset.created
 
-            query = cls.objects.select_related('user').filter(
-                Q(score__gt=user_score) | Q(score=user_score, modified__lt=user_time_scored),
-                course_id__exact=course_key,
-                user__is_active=True,
-                user__courseenrollment__is_active=True,
-                user__courseenrollment__course_id__exact=course_key,
-            )
+            queryset = cls._build_queryset(course_key, **kwargs)
 
-            if exclude_users:
-                query = query.exclude(user__id__in=exclude_users)
+            users_above = queryset.filter(
+                Q(score__gt=user_score) |
+                Q(score=user_score, modified__lt=user_time_scored)
+            ).count()
 
-            if cohort_user_ids:
-                query = query.filter(user_id__in=cohort_user_ids)
-
-            users_above = query.count()
             data['position'] = users_above + 1 if user_score > 0 else 0
             data['score'] = user_score
         return data
 
     @classmethod
-    def generate_leaderboard(cls, course_key, count=3, exclude_users=None, org_ids=None, cohort_user_ids=None):
+    def generate_leaderboard(cls, course_key, **kwargs):
         """
         Assembles a data set representing the Top N users, by progress, for a given course.
+        :param kwargs:
+            - `count`
+            - `exclude_users`
+            - `group_ids`
+            - `org_ids`
 
-        data = [
-                {'id': 123, 'username': 'testuser1', 'title', 'Engineer', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 80},
-                {'id': 983, 'username': 'testuser2', 'title', 'Analyst', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 70},
-                {'id': 246, 'username': 'testuser3', 'title', 'Product Owner', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 62},
-                {'id': 357, 'username': 'testuser4', 'title', 'Director', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'completions': 58},
+        :returns data = [
+            {'id': 123, 'username': 'testuser1', 'title', 'Engineer', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 80},
+            {'id': 983, 'username': 'testuser2', 'title', 'Analyst', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 70},
+            {'id': 246, 'username': 'testuser3', 'title', 'Product Owner', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'score': 62},
+            {'id': 357, 'username': 'testuser4', 'title', 'Director', 'profile_image_uploaded_at': '2014-01-15 06:27:54', 'completions': 58},
         ]
 
         """
-        exclude_users = exclude_users or []
-        queryset = cls.objects.select_related('user')\
-            .filter(course_id__exact=course_key, user__is_active=True, user__courseenrollment__is_active=True,
-                    user__courseenrollment__course_id__exact=course_key)
-
-        if exclude_users:
-            queryset = queryset.exclude(user__id__in=exclude_users)
-
-        if org_ids:
-            queryset = queryset.filter(user__organizations__in=org_ids)
-
-        if cohort_user_ids:
-            queryset = queryset.filter(user_id__in=cohort_user_ids)
+        data = {
+            'course_avg': 0,
+            'total_user_count': 0,
+            'queryset': [],
+        }
+        queryset = cls._build_queryset(course_key, **kwargs)
 
         aggregates = queryset.aggregate(Sum('score'))
-        course_avg = total_user_count = 0
         total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
         if total_score:
-            total_user_queryset = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users)
-            if cohort_user_ids:
-                total_user_queryset = total_user_queryset.filter(id__in=cohort_user_ids)
-            total_user_count = total_user_queryset.count()
-            course_avg = int(round(total_score / float(total_user_count)))
+            data['total_user_count'] = cls._build_enrollment_queryset(
+                course_key,
+                exclude_users=kwargs.get('exclude_users'),
+                cohort_user_ids=kwargs.get('cohort_user_ids'),
+            ).count()
+            data['course_avg'] = int(round(total_score / float(data['total_user_count'])))
 
-        if count:
-            queryset = queryset.values(
+        if kwargs.get('count'):
+            data['queryset'] = queryset.values(
                 'user__id',
                 'user__username',
                 'user__profile__title',
                 'user__profile__profile_image_uploaded_at',
                 'score',
-                'modified')\
-                .order_by('-score', 'modified')[:count]
-        return course_avg, total_user_count, queryset
+                'modified'
+            ).order_by('-score', 'modified')[:kwargs.get('count')]
+        else:
+            data['queryset'] = queryset
+
+        return data
+
+    @classmethod
+    def _build_queryset(cls, course_key, **kwargs):
+        """
+        Helper method to return filtered queryset.
+        :param kwargs:
+            - `exclude_users`
+            - `group_ids`
+            - `org_ids`
+            - `cohort_user_ids`
+        """
+        queryset = cls.objects.filter(
+            course_id__exact=course_key,
+            user__is_active=True,
+            user__courseenrollment__is_active=True,
+            user__courseenrollment__course_id__exact=course_key,
+        ).exclude(
+            user__in=kwargs.get('exclude_users', [])
+        )
+
+        if kwargs.get('group_ids'):
+            queryset = queryset.filter(user__groups__in=kwargs.get('group_ids')).distinct()
+
+        if kwargs.get('org_ids'):
+            queryset = queryset.filter(user__organizations__in=kwargs.get('org_ids'))
+
+        if kwargs.get('cohort_user_ids'):
+            queryset = queryset.filter(user_id__in=kwargs.get('cohort_user_ids'))
+
+        return queryset
+
+    @classmethod
+    def _build_enrollment_queryset(cls, course_key, **kwargs):
+        """
+        Helper method to return filtered enrollment queryset.
+        :param kwargs:
+            - `exclude_users`
+            - `group_ids`
+            - `org_ids`
+            - `cohort_user_ids`
+        """
+        queryset = CourseEnrollment.objects.users_enrolled_in(course_key)\
+            .exclude(id__in=kwargs.get('exclude_users', []))
+
+        if kwargs.get('group_ids'):
+            queryset = queryset.filter(groups__in=kwargs.get('group_ids')).distinct()
+
+        if kwargs.get('org_ids'):
+            queryset = queryset.filter(organizations__in=kwargs.get('org_ids'))
+
+        if kwargs.get('cohort_user_ids'):
+            queryset = queryset.filter(user_id__in=kwargs.get('cohort_user_ids'))
+
+        return queryset
 
 
 class StudentSocialEngagementScoreHistory(TimeStampedModel):

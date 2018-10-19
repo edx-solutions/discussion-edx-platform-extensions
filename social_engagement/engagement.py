@@ -214,8 +214,8 @@ def handle_progress_pre_save_signal(sender, instance, **kwargs):
 
         instance.presave_leaderboard_rank = StudentSocialEngagementScore.get_user_leaderboard_position(
             instance.course_id,
-            instance.user.id,
-            get_aggregate_exclusion_user_ids(instance.course_id)
+            user_id=instance.user.id,
+            exclude_users=get_aggregate_exclusion_user_ids(instance.course_id)
         )['position']
 
 
@@ -232,8 +232,8 @@ def handle_progress_post_save_signal(sender, instance, **kwargs):
 
         leaderboard_rank = StudentSocialEngagementScore.get_user_leaderboard_position(
             instance.course_id,
-            instance.user.id,
-            get_aggregate_exclusion_user_ids(instance.course_id)
+            user_id=instance.user.id,
+            exclude_users=get_aggregate_exclusion_user_ids(instance.course_id)
         )['position']
 
         if leaderboard_rank == 0:
@@ -299,7 +299,6 @@ def get_involved_users_in_thread(request, thread):
         _get_details_for_deletion(_get_request(request, params), results=results, is_thread=True)
 
     users = results['users']
-    print(users)
 
     if author_id:
         users[author_id]['num_upvotes'] += thread.votes.get('count', 0)
