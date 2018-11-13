@@ -2,6 +2,8 @@
 This module has implementation of celery tasks for discussion forum use cases
 """
 import logging
+import pytz
+from datetime import datetime
 
 from django.contrib.auth.models import User
 from django.db import transaction
@@ -70,6 +72,12 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
     factor = items if increment else -items
     social_metric_points = get_social_metric_points()
     course_key = CourseKey.from_string(course_id)
+
+    # Do not calculate engagement after course ends.
+    course_descriptor = modulestore().get_course(course_key)
+    if course_descriptor and course_descriptor.end and course_descriptor.end < datetime.now(pytz.UTC):
+        return
+
     try:
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
