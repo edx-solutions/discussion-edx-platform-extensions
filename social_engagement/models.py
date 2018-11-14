@@ -312,6 +312,7 @@ def on_studentengagementscore_save(sender, instance, created, **kwargs):
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
+    instance.refresh_from_db()
     invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,
