@@ -125,7 +125,11 @@ class StudentSocialEngagementScore(TimeStampedModel):
             queryset = queryset.filter(user__organizations=organization)
 
         attr = 'stats' if stats else 'score'
-        return dict(queryset.values_list('user', attr))
+        import ipdb; ipdb.set_trace()
+        return {
+            stat.user.id: getattr(stat, attr)
+            for stat in queryset
+        }
 
     @classmethod
     def get_course_engagement_scores(cls, course_key, organization=None, exclude_users=None):
