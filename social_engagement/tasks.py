@@ -88,9 +88,11 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
             course_id=course_key,
         )
         if isinstance(param, dict):
+            score_difference = 0
             for key, value in param.items():
-                score.score = F('score') + social_metric_points.get(key, 0) * factor * value
+                score_difference += social_metric_points.get(key, 0) * factor * value
                 setattr(score, key, F(key) + value * factor)
+            score.score = F('score') + score_difference
         else:
             score.score = F('score') + social_metric_points.get(param, 0) * factor
             setattr(score, param, F(param) + factor)
