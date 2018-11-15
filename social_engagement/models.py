@@ -111,6 +111,40 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return avg_score
 
     @classmethod
+    def _get_course_engagement(cls, course_key, organization=None, exclude_users=None, stats=False):
+        """
+        Helper for getting a dictionary containing data about users in a course in form of `user_id: attr`.
+        """
+        exclude_users = exclude_users or []
+        queryset = cls.objects\
+            .filter(course_id=course_key)\
+            .exclude(user__id__in=exclude_users)\
+            .prefetch_related('user')
+
+        if organization:
+            queryset = queryset.filter(user__organizations=organization)
+
+        attr = 'stats' if stats else 'score'
+        return {
+            stat.user.id: getattr(stat, attr)
+            for stat in queryset
+        }
+
+    @classmethod
+    def get_course_engagement_scores(cls, course_key, organization=None, exclude_users=None):
+        """
+        Returns a dictionary containing data about users in a course in form of `user_id: stats`.
+        """
+        return cls._get_course_engagement(course_key, organization, exclude_users)
+
+    @classmethod
+    def get_course_engagement_stats(cls, course_key, organization=None, exclude_users=None):
+        """
+        Returns a dictionary containing data about users in a course in form of `user_id: stats`.
+        """
+        return cls._get_course_engagement(course_key, organization, exclude_users, stats=True)
+
+    @classmethod
     def save_user_engagement_score(cls, course_key, user_id, score, stats=None):
         """
         Creates or updates an engagement score
@@ -278,6 +312,7 @@ def on_studentengagementscore_save(sender, instance, created, **kwargs):
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
+    instance.refresh_from_db()
     invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,
