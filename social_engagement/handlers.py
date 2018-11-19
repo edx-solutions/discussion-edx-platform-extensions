@@ -1,6 +1,7 @@
 """
 Discussion forum signal handlers
 """
+import logging
 from django.conf import settings
 from django.dispatch import receiver
 
@@ -16,6 +17,8 @@ from django_comment_common.signals import (
 )
 import lms.lib.comment_client as cc
 from social_engagement.tasks import task_handle_change_after_signal
+
+log = logging.getLogger(__name__)
 
 
 @receiver(thread_deleted)
@@ -97,10 +100,13 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
             # IMPORTANT: we have to use getattr here as
             # otherwise the property will not get fetched
             # from cs_comment_service
-            thread_user_id = int(getattr(thread, 'user_id', None))
+            try:
+                thread_user_id = int(getattr(thread, 'user_id'))
 
-            # update the engagement score of the thread creator as well
-            _increment(thread_user_id, course_id, 'num_comments_generated')
+                # update the engagement score of the thread creator as well
+                _increment(thread_user_id, course_id, 'num_comments_generated')
+            except AttributeError as error:
+                log.exception(error)
 
 
 @receiver(thread_followed)
@@ -128,11 +134,14 @@ def _thread_followed_or_unfollowed_handler(**kwargs):
     user_id = getattr(thread, 'user_id', None)
     action_user = kwargs['user']  # user who followed or un-followed thread
 
-    if user_id and action_user.id != int(user_id):
-        if kwargs.get('followed'):
-            _increment(user_id, course_id, 'num_thread_followers')
-        else:
-            _decrement(user_id, course_id, 'num_thread_followers')
+    try:
+        if user_id and str(action_user.id) != user_id:
+            if kwargs.get('followed'):
+                _increment(user_id, course_id, 'num_thread_followers')
+            else:
+                _decrement(user_id, course_id, 'num_thread_followers')
+    except AttributeError as error:
+        log.exception(error)
 
 
 @receiver(thread_or_comment_flagged)
