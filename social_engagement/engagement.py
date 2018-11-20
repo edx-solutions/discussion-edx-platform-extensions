@@ -453,7 +453,7 @@ def _get_paginated_results(request, comment_id, is_thread):
                 response = CommentViewSet().list(_get_request(request, {"page": response_page}))
             else:
                 response = CommentViewSet().retrieve(_get_request(request, {"page": response_page}), comment_id)
-        except (ThreadNotFoundError, CommentNotFoundError, InvalidKeyError):
+        except (CommentNotFoundError, InvalidKeyError):
             raise StopIteration
 
         has_next = response.data["pagination"]["next"]
