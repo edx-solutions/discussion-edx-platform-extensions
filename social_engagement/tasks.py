@@ -9,8 +9,8 @@ from student.models import CourseEnrollment
 from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.keys import CourseKey
 
-from social_engagement.engagement import update_user_engagement_score, get_social_metric_points
-from social_engagement.models import StudentSocialEngagementScore
+from social_engagement.engagement import update_user_engagement_score
+
 
 log = logging.getLogger('edx.celery.task')
 
@@ -55,32 +55,3 @@ def task_compute_social_scores_in_course(course_id):
     else:
         log.info("Course with course id %s does not exist", course_id)
     log.info("Social scores updated for %d users in course %s", score_update_count, course_id)
-
-
-@task(name=u'lms.djangoapps.social_engagement.tasks.task_handle_change_after_signal')
-def task_handle_change_after_signal(user_id, course_id, param, increment=True, items=1):
-    """
-    Save changes and calculate score.
-
-    :param param: `str` with stat that should be changed or
-                  `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed
-    """
-    factor = items if increment else -items
-    social_metric_points = get_social_metric_points()
-
-    score, _ = StudentSocialEngagementScore.objects.get_or_create(
-        user__id=user_id,
-        course_id=CourseKey.from_string(course_id),
-    )
-    if isinstance(param, dict):
-        for key, value in param.items():
-            score.score += social_metric_points.get(key, 0) * factor * value
-
-            previous = getattr(score, key, 0)
-            setattr(score, key, previous + value * factor)
-    else:
-        score.score += social_metric_points.get(param, 0) * factor
-        previous = getattr(score, param, 0)
-        setattr(score, param, previous + factor)
-
-    score.save()

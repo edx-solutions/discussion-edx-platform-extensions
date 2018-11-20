@@ -24,33 +24,11 @@ class StudentSocialEngagementScore(TimeStampedModel):
     course_id = CourseKeyField(db_index=True, max_length=255, blank=True, null=False)
     score = models.IntegerField(default=0, db_index=True, null=False)
 
-    # stats
-    num_threads = models.IntegerField(default=0)
-    num_thread_followers = models.IntegerField(default=0)
-    num_replies = models.IntegerField(default=0)
-    num_flagged = models.IntegerField(default=0)
-    num_comments = models.IntegerField(default=0)
-    num_threads_read = models.IntegerField(default=0)
-    num_downvotes = models.IntegerField(default=0)
-    num_upvotes = models.IntegerField(default=0)
-    num_comments_generated = models.IntegerField(default=0)
-
     class Meta:
         """
         Meta information for this Django model
         """
         unique_together = (('user', 'course_id'),)
-
-    @property
-    def stats(self):
-        """
-        Returns a dictionary containing all statistics.
-        """
-        return {
-            stat: value
-            for stat, value in self.__dict__.items()
-            if stat.startswith('num_')
-        }
 
     @classmethod
     def get_user_engagement_score(cls, course_key, user_id):
@@ -65,25 +43,6 @@ class StudentSocialEngagementScore(TimeStampedModel):
             return None
 
         return entry.score
-
-    @classmethod
-    def get_user_engagements_stats(cls, course_key, user_id, default=None):
-        """
-        Returns user's statistics as a dictionary.
-        If record does not exist, it returns `default` if specified
-        or else a dictionary containing statistics with their default values.
-        """
-        try:
-            return cls.objects.get(course_id__exact=course_key, user__id=user_id).stats
-        except cls.DoesNotExist:
-            if default is not None:
-                return default
-
-            return {
-                stat.name: stat.default
-                for stat in cls._meta.fields
-                if stat.name.startswith('num_')
-            }
 
     @classmethod
     def get_course_average_engagement_score(cls, course_key, exclude_users=None):
@@ -111,15 +70,16 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return avg_score
 
     @classmethod
-    def save_user_engagement_score(cls, course_key, user_id, score, stats=None):
+    def save_user_engagement_score(cls, course_key, user_id, score):
         """
         Creates or updates an engagement score
         """
-        stats = stats or {}
         cls.objects.update_or_create(
             course_id=course_key,
             user_id=user_id,
-            defaults=dict(score=score, **stats)
+            defaults={
+                "score": score,
+            }
         )
 
     @classmethod
@@ -272,7 +232,7 @@ class StudentSocialEngagementScoreHistory(TimeStampedModel):
 
 
 @receiver(post_save, sender=StudentSocialEngagementScore)
-def on_studentengagementscore_save(sender, instance, created, **kwargs):
+def on_studentengagementscore_save(sender, instance, **kwargs):
     """
     When a studentengagementscore is saved, we want to also store the
     score value in the history table, so we have a complete history
