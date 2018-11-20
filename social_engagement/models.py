@@ -24,6 +24,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
     course_id = CourseKeyField(db_index=True, max_length=255, blank=True, null=False)
     score = models.IntegerField(default=0, db_index=True, null=False)
 
+    # stats
+    num_threads = models.IntegerField(default=0)
+    num_thread_followers = models.IntegerField(default=0)
+    num_replies = models.IntegerField(default=0)
+    num_flagged = models.IntegerField(default=0)
+    num_comments = models.IntegerField(default=0)
+    num_threads_read = models.IntegerField(default=0)
+    num_downvotes = models.IntegerField(default=0)
+    num_upvotes = models.IntegerField(default=0)
+    num_comments_generated = models.IntegerField(default=0)
+
     class Meta:
         """
         Meta information for this Django model
