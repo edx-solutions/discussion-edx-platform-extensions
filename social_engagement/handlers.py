@@ -2,6 +2,7 @@
 Discussion forum signal handlers
 """
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.dispatch import receiver
 
 from django_comment_common.signals import (
@@ -10,86 +11,82 @@ from django_comment_common.signals import (
     thread_deleted,
     comment_deleted,
     thread_voted,
+    comment_voted,
     thread_followed,
     thread_unfollowed,
-    thread_or_comment_flagged,
 )
 import lms.lib.comment_client as cc
-from social_engagement.tasks import task_handle_change_after_signal
+from social_engagement.tasks import task_update_user_engagement_score
 
 
 @receiver(thread_deleted)
+@receiver(comment_deleted)
 @receiver(thread_voted)
-def thread_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
+@receiver(comment_voted)
+def thread_comment_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for deleted and voted thread (or voted comment).
-    TODO: And also, for some reason, on voted comment.
+    Updates user social engagement score
     """
-    thread = kwargs['post']
-    course_id = getattr(thread, 'course_id', None)
-    user_id = getattr(thread, 'user_id', None)
+    post = kwargs['post']
+    course_id = getattr(post, 'course_id', None)
+    user_id = getattr(post, 'user_id', None)
+    social_engagement_enabled = settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT', False)
 
-    # present if thread_deleted
-    if 'involved_users' in kwargs:
-        users = kwargs['involved_users']
-        for user, user_data in users.items():
-            _decrement(user, course_id, user_data)
+    if social_engagement_enabled:
+        if course_id and user_id:
+            task_update_user_engagement_score.delay(unicode(course_id), user_id)
 
-    # thread or comment voted
-    else:
-        change = _decrement if kwargs.get('undo') else _increment
-        change(user_id, course_id, 'num_upvotes')
+        # present only in two cases: thread_deleted & comment_deleted
+        if 'involved_users' in kwargs:
+            involved_users = kwargs['involved_users']
+            users = User.objects.filter(username__in=involved_users).exclude(id=user_id)
+
+            for user in users:
+                task_update_user_engagement_score.delay(unicode(course_id), user.id)
 
 
 @receiver(thread_created)
 def thread_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for created thread.
+    Updates user social engagement score
     """
     thread = kwargs['post']
     course_id = getattr(thread, 'course_id', None)
     action_user = kwargs['user']
+    social_engagement_enabled = settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT', False)
 
-    if action_user:
-        _increment(action_user.id, course_id, 'num_threads')
-
-
-@receiver(comment_deleted)
-def comment_deleted_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
-    """
-    Updates user social engagement score for deleted comment.
-    """
-    post = kwargs['post']
-    course_id = getattr(post, 'course_id', None)
-
-    if 'involved_users' in kwargs:
-        users = kwargs['involved_users']
-        for user, user_data in users.items():
-            _decrement(user, course_id, user_data)
+    if social_engagement_enabled and course_id and action_user:
+        task_update_user_engagement_score.delay(unicode(course_id), action_user.id)
 
 
 @receiver(comment_created)
 def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for created comment.
+    Updates user social engagement score
     """
     comment = kwargs['post']
     course_id = getattr(comment, 'course_id', None)
     thread_id = getattr(comment, 'thread_id', None)
     parent_id = getattr(comment, 'parent_id', None)
     action_user = kwargs['user']
+    social_engagement_enabled = settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT', False)
 
-    if action_user:
-        # a comment is a reply to a thread
-        # a response is a reply to a comment or a response
+    if social_engagement_enabled and course_id and action_user:
+        task_update_user_engagement_score.delay(unicode(course_id), action_user.id)
 
-        # It's a comment
-        if not parent_id:
-            _increment(action_user.id, course_id, 'num_comments')
+        # a response is a reply to a thread
+        # a comment is a reply to a response
+        is_comment = not thread_id and parent_id
 
-        # It's a reply
-        else:
-            _increment(action_user.id, course_id, 'num_replies')
+        if is_comment:
+            # If creating a comment, then we don't have the original thread_id
+            # so we have to get it from the parent
+            comment = cc.Comment.find(parent_id)
+            thread_id = comment.thread_id
+            replying_to_id = comment.user_id
+
+            # update the engagement of the author of the response
+            task_update_user_engagement_score.delay(unicode(course_id), replying_to_id)
 
         if thread_id:
             thread = cc.Thread.find(thread_id)
@@ -97,74 +94,24 @@ def comment_created_signal_handler(sender, **kwargs):  # pylint: disable=unused-
             # IMPORTANT: we have to use getattr here as
             # otherwise the property will not get fetched
             # from cs_comment_service
-            thread_user_id = int(getattr(thread, 'user_id', None))
+            thread_user_id = int(getattr(thread, 'user_id', 0))
 
-            # update the engagement score of the thread creator as well
-            _increment(thread_user_id, course_id, 'num_comments_generated')
+            # update the engagement score of the thread creator
+            # as well
+            task_update_user_engagement_score.delay(unicode(course_id), thread_user_id)
 
 
 @receiver(thread_followed)
-def thread_followed_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
-    """
-    Updates user social engagement score for followed thread.
-    """
-    _thread_followed_or_unfollowed_handler(followed=True, **kwargs)
-
-
 @receiver(thread_unfollowed)
-def thread_unfollowed_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
+def thread_follow_unfollow_signal_handler(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Updates user social engagement score for un-followed thread.
-    """
-    _thread_followed_or_unfollowed_handler(**kwargs)
-
-
-def _thread_followed_or_unfollowed_handler(**kwargs):
-    """
-    Updates user social engagement score for followed or un-followed thread.
+    Updates user social engagement score
     """
     thread = kwargs['post']
     course_id = getattr(thread, 'course_id', None)
     user_id = getattr(thread, 'user_id', None)
     action_user = kwargs['user']  # user who followed or un-followed thread
+    social_engagement_enabled = settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT', False)
 
-    if user_id and action_user.id != int(user_id):
-        if kwargs.get('followed'):
-            _increment(user_id, course_id, 'num_thread_followers')
-        else:
-            _decrement(user_id, course_id, 'num_thread_followers')
-
-
-@receiver(thread_or_comment_flagged)
-def thread_or_comment_flagged_handler(sender, **kwargs):  # pylint: disable=unused-argument
-    thread_or_comment = kwargs['post']
-    course_id = getattr(thread_or_comment, 'course_id', None)
-    user_id = getattr(thread_or_comment, 'user_id', None)
-
-    change = _decrement if kwargs.get('undo') else _increment
-    change(user_id, course_id, 'num_flagged')
-
-
-def _increment(*args, **kwargs):
-    """
-    A facade for handling incrementation.
-    """
-    _handle_change_after_signal(*args, **kwargs)
-
-
-def _decrement(*args, **kwargs):
-    """
-    A facade for handling decrementation.
-    """
-    _handle_change_after_signal(*args, increment=False, **kwargs)
-
-
-def _handle_change_after_signal(user_id, course_id, param, increment=True, items=1):
-    """
-    Validate settings and input and run Celery task for saving changed parameters.
-
-    :param param: `str` with stat that should be changed or
-                  `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed
-    """
-    if settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT') and user_id and course_id:
-        task_handle_change_after_signal.delay(user_id, course_id, param, increment, items)
+    if social_engagement_enabled and course_id and user_id and action_user.id != user_id:
+        task_update_user_engagement_score.delay(unicode(course_id), user_id)
