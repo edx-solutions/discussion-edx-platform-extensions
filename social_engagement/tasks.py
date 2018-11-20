@@ -2,11 +2,9 @@
 This module has implementation of celery tasks for discussion forum use cases
 """
 import logging
-import pytz
-from datetime import datetime
 
 from django.contrib.auth.models import User
-from django.db.models import F
+from django.db import transaction
 from celery.task import task
 
 from student.models import CourseEnrollment
@@ -72,29 +70,25 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
     factor = items if increment else -items
     social_metric_points = get_social_metric_points()
     course_key = CourseKey.from_string(course_id)
-
-    # Do not calculate engagement after course ends.
-    course_descriptor = modulestore().get_course(course_key)
-    if course_descriptor and course_descriptor.end and course_descriptor.end < datetime.now(pytz.UTC):
-        return
-
     try:
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
         log.error("User with id: '{}' does not exist.".format(user_id))
     else:
-        score, _ = StudentSocialEngagementScore.objects.get_or_create(
-            user=user,
-            course_id=course_key,
-        )
-        if isinstance(param, dict):
-            score_difference = 0
-            for key, value in param.items():
-                score_difference += social_metric_points.get(key, 0) * factor * value
-                setattr(score, key, F(key) + value * factor)
-            score.score = F('score') + score_difference
-        else:
-            score.score = F('score') + social_metric_points.get(param, 0) * factor
-            setattr(score, param, F(param) + factor)
+        with transaction.atomic():
+            score, _ = StudentSocialEngagementScore.objects.get_or_create(
+                user=user,
+                course_id=course_key,
+            )
+            if isinstance(param, dict):
+                for key, value in param.items():
+                    score.score += social_metric_points.get(key, 0) * factor * value
 
-        score.save()
+                    previous = getattr(score, key, 0)
+                    setattr(score, key, previous + value * factor)
+            else:
+                score.score += social_metric_points.get(param, 0) * factor
+                previous = getattr(score, param, 0)
+                setattr(score, param, previous + factor)
+
+            score.save()

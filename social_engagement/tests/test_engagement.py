@@ -114,47 +114,6 @@ class StudentEngagementTests(ModuleStoreTestCase):
             0
         )
 
-    def test_get_course_engagement_scores(self):
-        """
-        Verify that scores for course are retrieved and excluded correctly.
-        """
-        expected_scores = {
-            self.user.id: 100,
-            self.user2.id: 150
-        }
-
-        for user_id, score in expected_scores.items():
-            StudentSocialEngagementScore.save_user_engagement_score(self.course.id, user_id, score)
-
-        scores = StudentSocialEngagementScore.get_course_engagement_scores(self.course.id)
-        self.assertEqual(len(scores), 2)
-
-        for user_id in expected_scores.keys():
-            self.assertIn(user_id, scores)
-            self.assertEqual(scores[user_id], expected_scores[user_id])
-
-        # Check is excluding users works.
-        scores = StudentSocialEngagementScore.get_course_engagement_scores(
-            self.course.id,
-            exclude_users=(self.user.id,))
-        self.assertEqual(len(scores), 1)
-        self.assertIn(self.user2.id, scores)
-
-    def test_get_course_engagement_stats(self):
-        """
-        Verify that stats for course are complete.
-        """
-        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user.id, 100)
-        StudentSocialEngagementScore.save_user_engagement_score(self.course.id, self.user2.id, 150)
-
-        stats = StudentSocialEngagementScore.get_course_engagement_stats(self.course.id)
-        self.assertEqual(len(stats), 2)
-
-        for user_id in (self.user.id, self.user2.id):
-            self.assertIn(user_id, stats)
-            for key in stats[user_id].keys():
-                self.assertTrue(key.startswith('num_'))
-
     def test_get_user_engagements_stats(self):
         """
         Verify that stats are complete.
