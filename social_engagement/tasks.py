@@ -3,8 +3,6 @@ This module has implementation of celery tasks for discussion forum use cases
 """
 import logging
 
-from django.contrib.auth.models import User
-from django.db import transaction
 from celery.task import task
 
 from student.models import CourseEnrollment
@@ -69,26 +67,20 @@ def task_handle_change_after_signal(user_id, course_id, param, increment=True, i
     """
     factor = items if increment else -items
     social_metric_points = get_social_metric_points()
-    course_key = CourseKey.from_string(course_id)
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        log.error("User with id: '{}' does not exist.".format(user_id))
+
+    score, _ = StudentSocialEngagementScore.objects.get_or_create(
+        user__id=user_id,
+        course_id=CourseKey.from_string(course_id),
+    )
+    if isinstance(param, dict):
+        for key, value in param.items():
+            score.score += social_metric_points.get(key, 0) * factor * value
+
+            previous = getattr(score, key, 0)
+            setattr(score, key, previous + value * factor)
     else:
-        with transaction.atomic():
-            score, _ = StudentSocialEngagementScore.objects.get_or_create(
-                user=user,
-                course_id=course_key,
-            )
-            if isinstance(param, dict):
-                for key, value in param.items():
-                    score.score += social_metric_points.get(key, 0) * factor * value
+        score.score += social_metric_points.get(param, 0) * factor
+        previous = getattr(score, param, 0)
+        setattr(score, param, previous + factor)
 
-                    previous = getattr(score, key, 0)
-                    setattr(score, key, previous + value * factor)
-            else:
-                score.score += social_metric_points.get(param, 0) * factor
-                previous = getattr(score, param, 0)
-                setattr(score, param, previous + factor)
-
-            score.save()
+    score.save()
