@@ -41,6 +41,17 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         unique_together = (('user', 'course_id'),)
 
+    @property
+    def stats(self):
+        """
+        Returns a dictionary containing all statistics.
+        """
+        return {
+            stat: value
+            for stat, value in self.__dict__.items()
+            if stat.startswith('num_')
+        }
+
     @classmethod
     def get_user_engagement_score(cls, course_key, user_id):
         """
@@ -54,6 +65,25 @@ class StudentSocialEngagementScore(TimeStampedModel):
             return None
 
         return entry.score
+
+    @classmethod
+    def get_user_engagements_stats(cls, course_key, user_id, default=None):
+        """
+        Returns user's statistics as a dictionary.
+        If record does not exist, it returns `default` if specified
+        or else a dictionary containing statistics with their default values.
+        """
+        try:
+            return cls.objects.get(course_id__exact=course_key, user__id=user_id).stats
+        except cls.DoesNotExist:
+            if default is not None:
+                return default
+
+            return {
+                stat.name: stat.default
+                for stat in cls._meta.fields
+                if stat.name.startswith('num_')
+            }
 
     @classmethod
     def get_course_average_engagement_score(cls, course_key, exclude_users=None):
@@ -81,16 +111,49 @@ class StudentSocialEngagementScore(TimeStampedModel):
         return avg_score
 
     @classmethod
-    def save_user_engagement_score(cls, course_key, user_id, score):
+    def _get_course_engagement(cls, course_key, organization=None, exclude_users=None, stats=False):
+        """
+        Helper for getting a dictionary containing data about users in a course in form of `user_id: attr`.
+        """
+        exclude_users = exclude_users or []
+        queryset = cls.objects\
+            .filter(course_id=course_key)\
+            .exclude(user__id__in=exclude_users)\
+            .prefetch_related('user')
+
+        if organization:
+            queryset = queryset.filter(user__organizations=organization)
+
+        attr = 'stats' if stats else 'score'
+        return {
+            stat.user.id: getattr(stat, attr)
+            for stat in queryset
+        }
+
+    @classmethod
+    def get_course_engagement_scores(cls, course_key, organization=None, exclude_users=None):
+        """
+        Returns a dictionary containing data about users in a course in form of `user_id: stats`.
+        """
+        return cls._get_course_engagement(course_key, organization, exclude_users)
+
+    @classmethod
+    def get_course_engagement_stats(cls, course_key, organization=None, exclude_users=None):
+        """
+        Returns a dictionary containing data about users in a course in form of `user_id: stats`.
+        """
+        return cls._get_course_engagement(course_key, organization, exclude_users, stats=True)
+
+    @classmethod
+    def save_user_engagement_score(cls, course_key, user_id, score, stats=None):
         """
         Creates or updates an engagement score
         """
+        stats = stats or {}
         cls.objects.update_or_create(
             course_id=course_key,
             user_id=user_id,
-            defaults={
-                "score": score,
-            }
+            defaults=dict(score=score, **stats)
         )
 
     @classmethod
@@ -243,12 +306,13 @@ class StudentSocialEngagementScoreHistory(TimeStampedModel):
 
 
 @receiver(post_save, sender=StudentSocialEngagementScore)
-def on_studentengagementscore_save(sender, instance, **kwargs):
+def on_studentengagementscore_save(sender, instance, created, **kwargs):
     """
     When a studentengagementscore is saved, we want to also store the
     score value in the history table, so we have a complete history
     of the student's engagement score
     """
+    instance.refresh_from_db()
     invalid_user_data_cache('social', instance.course_id, instance.user.id)
     history_entry = StudentSocialEngagementScoreHistory(
         user=instance.user,
