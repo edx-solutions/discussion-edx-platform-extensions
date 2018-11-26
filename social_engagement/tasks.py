@@ -5,6 +5,7 @@ import logging
 import pytz
 from datetime import datetime
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import F
 from celery.task import task
@@ -36,7 +37,10 @@ def task_update_user_engagement_score(course_id, user_id):
         )
 
 
-@task(name=u'lms.djangoapps.social_engagement.tasks.task_compute_social_scores_in_course')
+@task(
+    name=u'lms.djangoapps.social_engagement.tasks.task_compute_social_scores_in_course',
+    routing_key=settings.RECALCULATE_SOCIAL_ENGAGEMENT_ROUTING_KEY,
+)
 def task_compute_social_scores_in_course(course_id):
     """
     Task to compute social scores in course
