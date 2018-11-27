@@ -20,6 +20,15 @@ class TestComputeSocialScoreCommand(SharedModuleStoreTestCase):
     """
     Tests the `compute_social_engagement_score` command.
     """
+    DEFAULT_STATS = {
+        'num_threads': 1,
+        'num_comments': 1,
+        'num_replies': 1,
+        'num_upvotes': 1,
+        'num_thread_followers': 1,
+        'num_comments_generated': 1,
+    }
+
     @classmethod
     def setUpClass(cls):
         super(TestComputeSocialScoreCommand, cls).setUpClass()
@@ -35,15 +44,9 @@ class TestComputeSocialScoreCommand(SharedModuleStoreTestCase):
         """
         Test to ensure all users enrolled in course have their social scores computed
         """
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
+        user_ids = [user.id for user in self.users]
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in user_ids)
             call_command('compute_social_engagement_score', course_id=unicode(self.course.id))
         users_count = StudentSocialEngagementScore.objects.filter(course_id=self.course.id).count()
         self.assertEqual(users_count, len(self.users))
@@ -61,30 +64,29 @@ class TestComputeSocialScoreCommand(SharedModuleStoreTestCase):
         __ = CourseOverview.get_from_id(course_open.id)
         __ = CourseOverview.get_from_id(course_closed.id)
         __ = CourseOverview.get_from_id(self.course.id)
+
+        user_ids = [user.id for user in self.users]
+
         for idx in range(1, 10):
             user = UserFactory.create()
             CourseEnrollmentFactory(
                 user=user,
                 course_id=course_open.id if idx % 2 == 0 else course_closed.id
             )
+            if idx % 2 == 0:
+                user_ids.append(user.id)
 
         with patch(
             'social_engagement.management.commands.compute_social_engagement_score.query_yes_no'
         ) as patched_yes_no:
             patched_yes_no.return_value = True
 
-            with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-                mock_func.return_value = {
-                    'num_threads': 1,
-                    'num_comments': 1,
-                    'num_replies': 1,
-                    'num_upvotes': 1,
-                    'num_thread_followers': 1,
-                    'num_comments_generated': 1,
-                }
+            course1_users = CourseEnrollment.objects.num_enrolled_in(course_open.id)
+            course2_users = CourseEnrollment.objects.num_enrolled_in(self.course.id)
+
+            with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+                mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in user_ids)
                 call_command('compute_social_engagement_score', compute_for_all_open_courses=True)
         users_count = StudentSocialEngagementScore.objects.all().count()
-        course1_users = CourseEnrollment.objects.num_enrolled_in(course_open.id)
-        course2_users = CourseEnrollment.objects.num_enrolled_in(self.course.id)
         open_course_users_count = course1_users + course2_users
         self.assertEqual(users_count, open_course_users_count)

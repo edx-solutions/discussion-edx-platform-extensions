@@ -12,18 +12,14 @@ from datetime import datetime, timedelta
 import pytz
 import ddt
 
-from django.test.utils import override_settings
-
 from student.tests.factories import UserFactory
 from student.models import CourseEnrollment
 from xmodule.modulestore.tests.factories import CourseFactory
 
 from social_engagement.models import StudentSocialEngagementScore, StudentSocialEngagementScoreHistory
 
-from social_engagement.engagement import update_user_engagement_score, _detail_results_factory, \
+from social_engagement.engagement import update_course_engagement, _detail_results_factory, \
     _get_details_for_deletion
-from social_engagement.engagement import update_course_engagement_scores
-from social_engagement.engagement import update_all_courses_engagement_scores
 
 from edx_notifications.startup import initialize as initialize_notifications
 from edx_notifications.lib.consumer import get_notifications_count_for_user
@@ -41,11 +37,20 @@ class StudentEngagementTests(ModuleStoreTestCase):
     """ Test suite for CourseModuleCompletion """
 
     MODULESTORE = TEST_DATA_SPLIT_MODULESTORE
+    DEFAULT_STATS = {
+        'num_threads': 1,
+        'num_comments': 1,
+        'num_replies': 1,
+        'num_upvotes': 1,
+        'num_thread_followers': 1,
+        'num_comments_generated': 1,
+    }
 
     def setUp(self):
         super(StudentEngagementTests, self).setUp()
         self.user = UserFactory()
         self.user2 = UserFactory()
+        self.user_ids = (self.user.id, self.user2.id)
 
         self._create_course()
 
@@ -283,33 +288,17 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         self.assertEqual(get_notifications_count_for_user(self.user.id), 0)
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
-
-            update_user_engagement_score(self.course.id, self.user.id)
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = ((self.user.id, self.DEFAULT_STATS),)
+            update_course_engagement(self.course.id)
 
             leaderboard_position = StudentSocialEngagementScore.get_user_leaderboard_position(
                 self.course.id,
                 user_id=self.user.id
             )
 
-            self.assertEqual(
-                leaderboard_position['score'],
-                85
-            )
-
-            self.assertEqual(
-                leaderboard_position['position'],
-                1
-            )
-
+            self.assertEqual(leaderboard_position['score'], 85)
+            self.assertEqual(leaderboard_position['position'], 1)
             self.assertEqual(get_notifications_count_for_user(self.user.id), 1)
 
     def test_multiple_users(self):
@@ -320,20 +309,9 @@ class StudentEngagementTests(ModuleStoreTestCase):
         self.assertEqual(get_notifications_count_for_user(self.user.id), 0)
         self.assertEqual(get_notifications_count_for_user(self.user2.id), 0)
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
-
-            update_user_engagement_score(self.course.id, self.user.id)
-
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
+        stats = (
+            self.DEFAULT_STATS,
+            {
                 'num_threads': 2,
                 'num_comments': 2,
                 'num_replies': 2,
@@ -341,25 +319,21 @@ class StudentEngagementTests(ModuleStoreTestCase):
                 'num_thread_followers': 2,
                 'num_comments_generated': 2,
             }
+        )
 
-            update_user_engagement_score(self.course.id, self.user2.id)
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = zip(self.user_ids, stats)
+            update_course_engagement(self.course.id)
 
         leaderboard_position = StudentSocialEngagementScore.get_user_leaderboard_position(
             self.course.id,
             user_id=self.user.id
         )
 
-        self.assertEqual(
-            leaderboard_position['score'],
-            85
-        )
+        self.assertEqual(leaderboard_position['score'], 85)
 
         # user should be in place #2
-        self.assertEqual(
-            leaderboard_position['position'],
-            2
-        )
-
+        self.assertEqual(leaderboard_position['position'], 2)
         self.assertEqual(get_notifications_count_for_user(self.user.id), 1)
 
         leaderboard_position = StudentSocialEngagementScore.get_user_leaderboard_position(
@@ -385,18 +359,10 @@ class StudentEngagementTests(ModuleStoreTestCase):
         Verifies that we can calculate the whole course enrollments
         """
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
-
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in self.user_ids)
             # update whole course and re-calc
-            update_course_engagement_scores(self.course.id)
+            update_course_engagement(self.course.id)
 
         data = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
 
@@ -414,18 +380,11 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         self.assertEqual(CourseEnrollment.objects.filter(course_id=course2.id).count(), 1)
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
-
-            # update whole course and re-calc
-            update_all_courses_engagement_scores()
+        for course in (self.course, course2):
+            with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+                mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in self.user_ids)
+                # update whole course and re-calc
+                update_course_engagement(course.id)
 
         data = StudentSocialEngagementScore.generate_leaderboard(self.course.id)
         self.assertEqual(len(data['queryset']), 2)
@@ -452,26 +411,19 @@ class StudentEngagementTests(ModuleStoreTestCase):
         CourseEnrollment.enroll(self.user, course2.id)
         CourseEnrollment.enroll(self.user2, course2.id)
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 1,
-                'num_comments': 1,
-                'num_replies': 1,
-                'num_upvotes': 1,
-                'num_thread_followers': 1,
-                'num_comments_generated': 1,
-            }
-
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in self.user_ids)
             # update whole course and re-calc
-            update_all_courses_engagement_scores()
+            update_course_engagement(course2.id, compute_if_closed_course=False)
 
             # shouldn't be anything in there because course is closed
             data = StudentSocialEngagementScore.generate_leaderboard(course2.id)
             self.assertEqual(len(data['queryset']), 0)
             self.assertEqual(data['course_avg'], 0)
 
+            mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in self.user_ids)
             # update whole course and re-calc
-            update_all_courses_engagement_scores(compute_if_closed_course=True)
+            update_course_engagement(course2.id, compute_if_closed_course=True)
 
             # shouldn't be anything in there because course is closed
             data = StudentSocialEngagementScore.generate_leaderboard(course2.id)
@@ -485,17 +437,19 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         self.assertEqual(get_notifications_count_for_user(self.user.id), 0)
 
-        with patch('social_engagement.engagement._get_user_social_stats') as mock_func:
-            mock_func.return_value = {
-                'num_threads': 0,
-                'num_comments': 0,
-                'num_replies': 0,
-                'num_upvotes': 0,
-                'num_thread_followers': 0,
-                'num_comments_generated': 0,
-            }
+        empty_stats = {
+            'num_threads': 0,
+            'num_comments': 0,
+            'num_replies': 0,
+            'num_upvotes': 0,
+            'num_thread_followers': 0,
+            'num_comments_generated': 0,
+        }
 
-            update_user_engagement_score(self.course.id, self.user.id)
+        with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
+            mock_func.return_value = ((user_id, empty_stats) for user_id in self.user_ids)
+
+            update_course_engagement(self.course.id, self.user.id)
 
             leaderboard_position = StudentSocialEngagementScore.get_user_leaderboard_position(
                 self.course.id,
