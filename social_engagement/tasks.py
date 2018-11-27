@@ -20,23 +20,6 @@ from social_engagement.models import StudentSocialEngagementScore
 log = logging.getLogger('edx.celery.task')
 
 
-@task(name=u'lms.djangoapps.social_engagement.tasks.task_update_user_engagement_score')
-def task_update_user_engagement_score(course_id, user_id):
-    """
-    Task to update user's engagement score
-    """
-    try:
-        update_user_engagement_score(course_id, user_id)
-    except Exception as exc:   # pylint: disable=broad-except
-        log.info(
-            "social engagement score update failure for course {} and user id {} with exception {}".format(
-                course_id,
-                user_id,
-                repr(exc)
-            )
-        )
-
-
 @task(
     name=u'lms.djangoapps.social_engagement.tasks.task_compute_social_scores_in_course',
     routing_key=settings.RECALCULATE_SOCIAL_ENGAGEMENT_ROUTING_KEY,
@@ -65,10 +48,10 @@ def task_compute_social_scores_in_course(course_id):
     log.info("Social scores updated for %d users in course %s", score_update_count, course_id)
 
 
-@task(name=u'lms.djangoapps.social_engagement.tasks.task_handle_change_after_signal')
-def task_handle_change_after_signal(user_id, course_id, param, increment=True, items=1):
+@task(name=u'lms.djangoapps.social_engagement.tasks.task_update_user_engagement')
+def task_update_user_engagement(user_id, course_id, param, increment=True, items=1):
     """
-    Save changes and calculate score.
+    Save changes in stats and calculate score.
 
     :param param: `str` with stat that should be changed or
                   `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed

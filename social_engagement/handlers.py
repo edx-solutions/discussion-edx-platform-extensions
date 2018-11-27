@@ -16,7 +16,7 @@ from django_comment_common.signals import (
     thread_or_comment_flagged,
 )
 import lms.lib.comment_client as cc
-from social_engagement.tasks import task_handle_change_after_signal
+from social_engagement.tasks import task_update_user_engagement
 
 log = logging.getLogger(__name__)
 
@@ -176,4 +176,4 @@ def _handle_change_after_signal(user_id, course_id, param, increment=True, items
                   `dict[str, int]` (`stat: number_of_occurrences`) with the stats that should be changed
     """
     if settings.FEATURES.get('ENABLE_SOCIAL_ENGAGEMENT') and user_id and course_id:
-        task_handle_change_after_signal.delay(user_id, course_id, param, increment, items)
+        task_update_user_engagement.delay(user_id, course_id, param, increment, items)
