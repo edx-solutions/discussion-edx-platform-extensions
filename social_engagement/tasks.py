@@ -27,18 +27,17 @@ def task_compute_social_scores_in_course(course_id):
     """
     Task to compute social scores in course
     """
-    score_update_count = 0
     course_key = CourseKey.from_string(course_id)
     course = modulestore().get_course(course_key, depth=None)
 
     if course:
-        # For each user compute and save social engagement score
         score_update_count = update_course_engagement(
             course_key, compute_if_closed_course=True, course_descriptor=course
         )
+        log.info("Social scores updated for %d users in course %s", score_update_count or 0, course_id)
+
     else:
         log.info("Course with course id %s does not exist", course_id)
-    log.info("Social scores updated for %d users in course %s", score_update_count, course_id)
 
 
 @task(name=u'lms.djangoapps.social_engagement.tasks.task_update_user_engagement')
