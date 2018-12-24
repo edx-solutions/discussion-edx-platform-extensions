@@ -39,16 +39,32 @@ class Command(BaseCommand):
             help="set this to True if social scores for all open courses needs to be computed",
             metavar="True"
         ),
+        make_option(
+            "--noinput",
+            "--no-input",
+            dest="interactive",
+            action="store_false",
+            default=True,
+            help="Do not prompt the user for input of any kind",
+            metavar="True"
+        ),
     )
 
     def handle(self, *args, **options):
-
         course_id = options.get('course_id')
         compute_for_all_open_courses = options.get('compute_for_all_open_courses')
+        interactive = options.get('interactive')
+
         if course_id:
             task_compute_social_scores_in_course.delay(course_id)
         elif compute_for_all_open_courses:
-            if query_yes_no("Are you sure to compute social engagement scores for all open courses?", default="no"):
+            # prompt for user confirmation in interactive mode
+            execute = query_yes_no(
+                "Are you sure to compute social engagement scores for all open courses?"
+                , default="no"
+            ) if interactive else True
+
+            if execute:
                 open_courses = CourseOverview.objects.filter(
                     Q(end__gte=datetime.datetime.today().replace(tzinfo=UTC)) |
                     Q(end__isnull=True)
