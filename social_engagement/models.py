@@ -86,7 +86,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             }
 
     @classmethod
-    def get_course_average_engagement_score(cls, course_key, exclude_users=None):
+    def get_course_average_engagement_score(cls, course_key, exclude_users=None, cohort_user_ids=None):
         """
         Returns the course average engagement score.
         """
@@ -98,6 +98,8 @@ class StudentSocialEngagementScore(TimeStampedModel):
             user__courseenrollment__course_id__exact=course_key
         )
         queryset = queryset.exclude(user__id__in=exclude_users)
+        if cohort_user_ids:
+            queryset = queryset.filter(user_id__in=cohort_user_ids)
         aggregates = queryset.aggregate(Sum('score'))
         avg_score = 0
         total_score = aggregates['score__sum']
