@@ -102,10 +102,10 @@ class Command(BaseCommand):
                     )
                 # Add inactive courses to queryset if compute_for_inactive_courses is True
                 if compute_for_inactive_courses:
-                    courses |= CourseOverview.objects.filter(
-                        Q(end__lt=today) &
-                        Q(end__gte=backwards_query_limit_date)
-                    )
+                    courses |= CourseOverview.objects.filter(end__range=[
+                        backwards_query_limit_date,
+                        today
+                    ])
 
                 for course in courses:
                     course_id = unicode(course.id)
