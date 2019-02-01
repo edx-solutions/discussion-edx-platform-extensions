@@ -53,12 +53,13 @@ class Command(BaseCommand):
             "--months_back_limit",
             dest="months_back_limit",
             type="int",
-            default=12,
+            default=0,
             help="set this to the number of months that the --inactive "
-                 "parameter should look back to. Eg: --months=24 will "
-                 "compute social engagement scores for inactive courses from "
-                 "the last 24 months. Defaults to 12 months.",
-            metavar="12"
+                 "parameter should look back to. Setting this to 0 will "
+                 "compute scores from all archived courses. Example: "
+                 "--months_back_limit=24 will compute social engagement scores "
+                 "for inactive courses from the last 24 months.",
+            metavar="0"
         ),
         make_option(
             "--noinput",
@@ -90,9 +91,6 @@ class Command(BaseCommand):
             if execute:
                 courses = CourseOverview.objects.none()
                 today = datetime.datetime.today().replace(tzinfo=UTC)
-                backwards_query_limit_date = (
-                    datetime.datetime.today() - relativedelta(months=months_back_limit)
-                ).replace(tzinfo=UTC)
 
                 # Add active courses to queryset if compute_for_all_open_courses is True
                 if compute_for_all_open_courses:
@@ -102,10 +100,15 @@ class Command(BaseCommand):
                     )
                 # Add inactive courses to queryset if compute_for_inactive_courses is True
                 if compute_for_inactive_courses:
-                    courses |= CourseOverview.objects.filter(end__range=[
-                        backwards_query_limit_date,
-                        today
-                    ])
+                    filter_set = Q(end__lt=today)
+                    # If user set months back limit, add filter to queryset
+                    if months_back_limit:
+                        backwards_query_limit_date = (
+                            datetime.datetime.today() - relativedelta(months=months_back_limit)
+                        ).replace(tzinfo=UTC)
+                        filter_set &= Q(end__gte=backwards_query_limit_date)
+                    # Filter courses and add them to courses list
+                    courses |= CourseOverview.objects.filter(filter_set)
 
                 for course in courses:
                     course_id = unicode(course.id)
