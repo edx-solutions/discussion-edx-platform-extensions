@@ -9,7 +9,7 @@ import lms.lib.comment_client as cc
 import logging
 import pytz
 from collections import defaultdict
-from discussion_api.exceptions import CommentNotFoundError, ThreadNotFoundError
+from lms.djangoapps.discussion_api.exceptions import CommentNotFoundError, ThreadNotFoundError
 from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
