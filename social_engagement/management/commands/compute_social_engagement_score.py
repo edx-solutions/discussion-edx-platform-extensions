@@ -5,10 +5,9 @@ Command to compute social engagement score of users in a single course or all op
 """
 import logging
 import datetime
-from dateutil.relativedelta import relativedelta
 from pytz import UTC
-from optparse import make_option
 
+from dateutil.relativedelta import relativedelta
 from django.core.management import BaseCommand
 from django.db.models import Q
 
@@ -25,22 +24,22 @@ class Command(BaseCommand):
     """
     help = "Command to compute social engagement score of users in a single course or all open courses"
 
-    option_list = BaseCommand.option_list + (
-        make_option(
+    def add_arguments(self, parser):
+        parser.add_argument(
             "-c",
             "--course_id",
             dest="course_id",
             help="course id to compute social engagement score",
             metavar="any/course/id"
         ),
-        make_option(
+        parser.add_argument(
             "-a",
             "--all",
             dest="compute_for_all_open_courses",
             help="set this to True if social scores for all open courses needs to be computed",
             metavar="True"
         ),
-        make_option(
+        parser.add_argument(
             "-i",
             "--inactive",
             dest="compute_for_inactive_courses",
@@ -48,11 +47,11 @@ class Command(BaseCommand):
                  "past months needs to be computed",
             metavar="True"
         ),
-        make_option(
+        parser.add_argument(
             "-m",
             "--months_back_limit",
             dest="months_back_limit",
-            type="int",
+            type=int,
             default=0,
             help="set this to the number of months that the --inactive "
                  "parameter should look back to. Setting this to 0 will "
@@ -61,16 +60,14 @@ class Command(BaseCommand):
                  "for inactive courses from the last 24 months.",
             metavar="0"
         ),
-        make_option(
+        parser.add_argument(
             "--noinput",
             "--no-input",
             dest="interactive",
             action="store_false",
             default=True,
-            help="Do not prompt the user for input of any kind",
-            metavar="True"
+            help="Do not prompt the user for input of any kind"
         ),
-    )
 
     def handle(self, *args, **options):
         course_id = options.get('course_id')
