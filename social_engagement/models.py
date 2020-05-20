@@ -12,7 +12,7 @@ from model_utils.models import TimeStampedModel
 from edx_solutions_api_integration.utils import (
     invalid_user_data_cache,
 )
-from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
+from opaque_keys.edx.django.models import CourseKeyField
 from student.models import CourseEnrollment
 
 
