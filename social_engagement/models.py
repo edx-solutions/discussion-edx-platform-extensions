@@ -223,9 +223,9 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         if not kwargs.get('cohort_user_ids'):
             data['total_user_count'] = get_course_enrollment_count(course_id)
-            data = get_cached_data('social', course_id)
-            if data is not None:
-                data['course_avg'] = data.get('course_avg')
+            cached_data = get_cached_data('social', course_id)
+            if cached_data is not None:
+                data['course_avg'] = cached_data.get('course_avg')
             else:
                 data['course_avg'] = cls._calculate_course_average_engagement_score(queryset, data['total_user_count'])
         else:
