@@ -9,9 +9,8 @@ from django.dispatch import receiver
 from django.db.models.signals import post_save
 
 from model_utils.models import TimeStampedModel
-from edx_solutions_api_integration.utils import (
-    invalid_user_data_cache,
-)
+from edx_solutions_api_integration.utils import invalid_user_data_cache, get_cached_data
+from edx_solutions_api_integration.courses.utils import get_course_enrollment_count
 from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
 from student.models import CourseEnrollment
 
@@ -90,6 +89,11 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         Returns the course average engagement score.
         """
+        course_id = course_key.to_deprecated_string()
+        data = get_cached_data('social', course_id)
+        if data is not None:
+            return data.get('course_avg')
+
         exclude_users = exclude_users or []
         queryset = cls.objects.select_related('user').filter(
             course_id__exact=course_key,
@@ -104,7 +108,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         if total_score is None:
             total_score = 0
         if total_score:
-            user_count = CourseEnrollment.objects.users_enrolled_in(course_key).exclude(id__in=exclude_users).count()
+            user_count = get_course_enrollment_count(course_id)
             if user_count:
                 avg_score = int(round(total_score / float(user_count)))
 
@@ -214,17 +218,23 @@ class StudentSocialEngagementScore(TimeStampedModel):
             'total_user_count': 0,
             'queryset': [],
         }
+        course_id = course_key.to_deprecated_string()
         queryset = cls._build_queryset(course_key, **kwargs)
 
-        aggregates = queryset.aggregate(Sum('score'))
-        total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
-        if total_score:
+        if not kwargs.get('cohort_user_ids'):
+            data['total_user_count'] = get_course_enrollment_count(course_id)
+            cached_data = get_cached_data('social', course_id)
+            if cached_data is not None:
+                data['course_avg'] = cached_data.get('course_avg')
+            else:
+                data['course_avg'] = cls._calculate_course_average_engagement_score(queryset, data['total_user_count'])
+        else:
             data['total_user_count'] = cls._build_enrollment_queryset(
                 course_key,
                 exclude_users=kwargs.get('exclude_users'),
                 cohort_user_ids=kwargs.get('cohort_user_ids'),
             ).count()
-            data['course_avg'] = int(round(total_score / float(data['total_user_count'])))
+            data['course_avg'] = cls._calculate_course_average_engagement_score(queryset, data['total_user_count'])
 
         if kwargs.get('count'):
             data['queryset'] = queryset.values(
@@ -296,6 +306,16 @@ class StudentSocialEngagementScore(TimeStampedModel):
 
         return queryset
 
+    @classmethod
+    def _calculate_course_average_engagement_score(cls, queryset, total_user_count):
+        """
+        Helper method to calculate and return course average score from queryset.
+        """
+        aggregates = queryset.aggregate(Sum('score'))
+        total_score = aggregates['score__sum'] if aggregates['score__sum'] else 0
+        if total_score:
+            return int(round(total_score / float(total_user_count)))
+        return 0
 
 class StudentSocialEngagementScoreHistory(TimeStampedModel):
     """

@@ -6,12 +6,14 @@ paver test_system -s lms --test_id=lms/djangoapps/social_engagements/tests/test_
 
 from django.conf import settings
 from django.db import IntegrityError
+from django.test.utils import override_settings
 
 from mock import patch
 from datetime import datetime, timedelta
 import pytz
 import ddt
 
+from student.roles import CourseObserverRole
 from student.tests.factories import UserFactory
 from student.models import CourseEnrollment
 from xmodule.modulestore.tests.factories import CourseFactory
@@ -82,8 +84,9 @@ class StudentEngagementTests(ModuleStoreTestCase):
         self.assertEqual(result['score'], 0)
         self.assertEqual(result['position'], 0)
 
-        self.assertEqual(StudentSocialEngagementScore.generate_leaderboard(self.course.id)['total_user_count'], 0)
+        self.assertEqual(StudentSocialEngagementScore.generate_leaderboard(self.course.id)['total_user_count'], 2)
 
+    @override_settings(CACHES={'default': {'BACKEND': 'django.core.cache.backends.dummy.DummyCache',}})
     def test_get_course_average_engagement_score(self):
         """
         Verify that average course engagement score is calculated correctly
@@ -97,6 +100,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         self.assertEqual(StudentSocialEngagementScore.get_course_average_engagement_score(self.course.id), 125)
 
         # Exclude users from calculation:
+        CourseObserverRole(self.course.id).add_users(self.user)
         self.assertEqual(
             StudentSocialEngagementScore.get_course_average_engagement_score(
                 self.course.id,
@@ -104,6 +108,8 @@ class StudentEngagementTests(ModuleStoreTestCase):
             ),
             150
         )
+        CourseObserverRole(self.course.id).remove_users(self.user)
+        CourseObserverRole(self.course.id).add_users(self.user2)
         self.assertEqual(
             StudentSocialEngagementScore.get_course_average_engagement_score(
                 self.course.id,
@@ -111,6 +117,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
             ),
             100
         )
+        CourseObserverRole(self.course.id).add_users(self.user)
         self.assertEqual(
             StudentSocialEngagementScore.get_course_average_engagement_score(
                 self.course.id,
