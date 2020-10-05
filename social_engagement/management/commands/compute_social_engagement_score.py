@@ -3,17 +3,17 @@ Command to compute social engagement score of users in a single course or all op
 ./manage.py lms compute_social_engagement_score -c {course_id} --settings=aws
 ./manage.py lms compute_social_engagement_score -a true --settings=aws
 """
-import logging
 import datetime
+import logging
+
+from django.core.management import BaseCommand
+from django.db.models import Q
 from pytz import UTC
 
 from dateutil.relativedelta import relativedelta
-from django.core.management import BaseCommand
-from django.db.models import Q
-
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
-from util.prompt import query_yes_no
 from social_engagement.tasks import task_compute_social_scores_in_course
+from util.prompt import query_yes_no
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +108,6 @@ class Command(BaseCommand):
                     courses |= CourseOverview.objects.filter(filter_set)
 
                 for course in courses:
-                    course_id = unicode(course.id)
+                    course_id = str(course.id)
                     task_compute_social_scores_in_course.delay(course_id)
                     log.info("Task queued to compute social engagment score for course %s", course_id)

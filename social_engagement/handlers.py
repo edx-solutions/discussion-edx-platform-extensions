@@ -2,20 +2,16 @@
 Discussion forum signal handlers
 """
 import logging
+
 from django.conf import settings
 from django.dispatch import receiver
 
-from django_comment_common.signals import (
-    thread_created,
-    comment_created,
-    thread_deleted,
-    comment_deleted,
-    thread_voted,
-    thread_followed,
-    thread_unfollowed,
-    thread_or_comment_flagged,
-)
-import lms.lib.comment_client as cc
+import openedx.core.djangoapps.django_comment_common.comment_client as cc
+from django_comment_common.signals import (comment_created, comment_deleted,
+                                           thread_created, thread_deleted,
+                                           thread_followed,
+                                           thread_or_comment_flagged,
+                                           thread_unfollowed, thread_voted)
 from social_engagement.tasks import task_update_user_engagement
 
 log = logging.getLogger(__name__)
