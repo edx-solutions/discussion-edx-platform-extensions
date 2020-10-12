@@ -90,7 +90,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         Returns the course average engagement score.
         """
-        course_id = course_key.to_deprecated_string()
+        course_id = str(course_key)
         data = get_cached_data('social', course_id)
         if data is not None:
             return data.get('course_avg')
@@ -219,7 +219,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             'total_user_count': 0,
             'queryset': [],
         }
-        course_id = course_key.to_deprecated_string()
+        course_id = str(course_key)
         queryset = cls._build_queryset(course_key, **kwargs)
 
         if not kwargs.get('cohort_user_ids'):

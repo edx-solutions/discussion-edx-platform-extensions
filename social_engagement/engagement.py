@@ -42,7 +42,7 @@ def update_course_engagement(course_id, compute_if_closed_course=False, course_d
 
     course_key = course_id if isinstance(course_id, CourseKey) else CourseKey.from_string(course_id)
     # cs_comment_service works is slash separated course_id strings
-    slash_course_id = course_key.to_deprecated_string()
+    slash_course_id = str(course_key)
 
     if not course_descriptor:
         # it course descriptor was not passed in (as an optimization)
