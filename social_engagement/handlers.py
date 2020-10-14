@@ -7,7 +7,7 @@ from django.conf import settings
 from django.dispatch import receiver
 
 import openedx.core.djangoapps.django_comment_common.comment_client as cc
-from django_comment_common.signals import (comment_created, comment_deleted,
+from openedx.core.djangoapps.django_comment_common.signals import (comment_created, comment_deleted,
                                            thread_created, thread_deleted,
                                            thread_followed,
                                            thread_or_comment_flagged,
