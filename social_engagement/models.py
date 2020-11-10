@@ -236,7 +236,6 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 cohort_user_ids=kwargs.get('cohort_user_ids'),
             ).count()
             data['course_avg'] = cls._calculate_course_average_engagement_score(queryset, data['total_user_count'])
-
         if kwargs.get('count'):
             data['queryset'] = queryset.values(
                 'user__id',
@@ -247,7 +246,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 'user__profile__profile_image_uploaded_at',
                 'score',
                 'modified'
-            ).order_by('-score', 'modified')[:kwargs.get('count')]
+            ).order_by('-score', 'modified')[:int(kwargs.get('count'))]
         else:
             data['queryset'] = queryset
 
