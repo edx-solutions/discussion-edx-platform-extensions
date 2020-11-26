@@ -5,12 +5,13 @@ Django database models supporting the social_engagement app
 from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import Q, Sum
-from django.dispatch import receiver
 from django.db.models.signals import post_save
+from django.dispatch import receiver
 
-from model_utils.models import TimeStampedModel
-from edx_solutions_api_integration.utils import invalid_user_data_cache, get_cached_data
 from edx_solutions_api_integration.courses.utils import get_course_enrollment_count
+from edx_solutions_api_integration.utils import (get_cached_data,
+                                                 invalid_user_data_cache)
+from model_utils.models import TimeStampedModel
 from opaque_keys.edx.django.models import CourseKeyField
 from student.models import CourseEnrollment
 
@@ -19,7 +20,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
     """
     StudentProgress is essentially a container used to store calculated progress of user
     """
-    user = models.ForeignKey(User, db_index=True, null=False)
+    user = models.ForeignKey(User, db_index=True, null=False, on_delete=models.CASCADE)
     course_id = CourseKeyField(db_index=True, max_length=255, blank=True, null=False)
     score = models.IntegerField(default=0, db_index=True, null=False)
 
@@ -89,7 +90,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
         """
         Returns the course average engagement score.
         """
-        course_id = course_key.to_deprecated_string()
+        course_id = str(course_key)
         data = get_cached_data('social', course_id)
         if data is not None:
             return data.get('course_avg')
@@ -218,7 +219,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
             'total_user_count': 0,
             'queryset': [],
         }
-        course_id = course_key.to_deprecated_string()
+        course_id = str(course_key)
         queryset = cls._build_queryset(course_key, **kwargs)
 
         if not kwargs.get('cohort_user_ids'):
@@ -235,7 +236,6 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 cohort_user_ids=kwargs.get('cohort_user_ids'),
             ).count()
             data['course_avg'] = cls._calculate_course_average_engagement_score(queryset, data['total_user_count'])
-
         if kwargs.get('count'):
             data['queryset'] = queryset.values(
                 'user__id',
@@ -246,7 +246,7 @@ class StudentSocialEngagementScore(TimeStampedModel):
                 'user__profile__profile_image_uploaded_at',
                 'score',
                 'modified'
-            ).order_by('-score', 'modified')[:kwargs.get('count')]
+            ).order_by('-score', 'modified')[:int(kwargs.get('count'))]
         else:
             data['queryset'] = queryset
 
@@ -322,7 +322,7 @@ class StudentSocialEngagementScoreHistory(TimeStampedModel):
     A running audit trail for the StudentProgress model.  Listens for
     post_save events and creates/stores copies of progress entries.
     """
-    user = models.ForeignKey(User, db_index=True)
+    user = models.ForeignKey(User, db_index=True, on_delete=models.CASCADE)
     course_id = CourseKeyField(db_index=True, max_length=255, blank=True)
     score = models.IntegerField()
 

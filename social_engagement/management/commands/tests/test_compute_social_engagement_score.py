@@ -1,18 +1,18 @@
 """
 Unit tests for compute_social_engagement_score command
 """
-from mock import patch
 from datetime import datetime
 
 from django.conf import settings
 from django.core.management import call_command
 
+from mock import patch
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from social_engagement.models import StudentSocialEngagementScore
+from student.models import CourseEnrollment
+from student.tests.factories import CourseEnrollmentFactory, UserFactory
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
-from student.models import CourseEnrollment
-from student.tests.factories import UserFactory, CourseEnrollmentFactory
-from social_engagement.models import StudentSocialEngagementScore
 
 
 @patch.dict(settings.FEATURES, {'ENABLE_SOCIAL_ENGAGEMENT': True})
@@ -31,7 +31,7 @@ class TestComputeSocialScoreCommand(SharedModuleStoreTestCase):
 
     @classmethod
     def setUpClass(cls):
-        super(TestComputeSocialScoreCommand, cls).setUpClass()
+        super().setUpClass()
 
         cls.course = CourseFactory.create()
         cls.users = []
@@ -47,7 +47,7 @@ class TestComputeSocialScoreCommand(SharedModuleStoreTestCase):
         user_ids = [user.id for user in self.users]
         with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
             mock_func.return_value = ((user_id, self.DEFAULT_STATS) for user_id in user_ids)
-            call_command('compute_social_engagement_score', course_id=unicode(self.course.id))
+            call_command('compute_social_engagement_score', course_id=str(self.course.id))
         users_count = StudentSocialEngagementScore.objects.filter(course_id=self.course.id).count()
         self.assertEqual(users_count, len(self.users))
 

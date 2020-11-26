@@ -2,30 +2,28 @@
 Business logic tier regarding social engagement scores
 """
 
+import logging
 import sys
+from collections import defaultdict
 from datetime import datetime
 
-import lms.lib.comment_client as cc
-import logging
 import pytz
-from collections import defaultdict
-from lms.djangoapps.discussion_api.exceptions import CommentNotFoundError, ThreadNotFoundError
 from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.http import HttpRequest
+
+import openedx.core.djangoapps.django_comment_common.comment_client as cc
 from edx_notifications.data import NotificationMessage
-from edx_notifications.lib.publisher import (
-    publish_notification_to_user,
-    get_notification_type
-)
-from edx_solutions_api_integration.utils import (
-    get_aggregate_exclusion_user_ids,
-)
-from lms.lib.comment_client.user import get_course_social_stats
-from lms.lib.comment_client.utils import CommentClientRequestError
+from edx_notifications.lib.publisher import (get_notification_type,
+                                             publish_notification_to_user)
+from edx_solutions_api_integration.utils import get_aggregate_exclusion_user_ids
+from lms.djangoapps.discussion.rest_api.exceptions import (CommentNotFoundError,
+                                                      ThreadNotFoundError)
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
+from openedx.core.djangoapps.django_comment_common.comment_client.user import get_course_social_stats
+from openedx.core.djangoapps.django_comment_common.comment_client.utils import CommentClientRequestError
 from requests.exceptions import ConnectionError
 from xmodule.modulestore.django import modulestore
 
@@ -44,7 +42,7 @@ def update_course_engagement(course_id, compute_if_closed_course=False, course_d
 
     course_key = course_id if isinstance(course_id, CourseKey) else CourseKey.from_string(course_id)
     # cs_comment_service works is slash separated course_id strings
-    slash_course_id = course_key.to_deprecated_string()
+    slash_course_id = str(course_key)
 
     if not course_descriptor:
         # it course descriptor was not passed in (as an optimization)
@@ -75,7 +73,7 @@ def update_course_engagement(course_id, compute_if_closed_course=False, course_d
 
             score_update_count += 1
 
-    except (CommentClientRequestError, ConnectionError), error:
+    except (CommentClientRequestError, ConnectionError) as error:
         log.exception(error)
 
     return score_update_count
@@ -86,8 +84,7 @@ def _get_course_social_stats(course_id):
     Yield user and user's stats for whole course from Forum API.
     """
     stats = get_course_social_stats(course_id)
-    for user, social_stats in stats.items():
-        yield user, social_stats
+    yield from stats.items()
 
 
 def get_social_metric_points():
@@ -115,7 +112,7 @@ def _compute_social_engagement_score(social_metrics):
     social_metric_points = get_social_metric_points()
 
     social_total = 0
-    for key, val in social_metric_points.iteritems():
+    for key, val in social_metric_points.items():
         social_total += social_metrics.get(key, 0) * val
 
     return social_total
@@ -169,12 +166,12 @@ def handle_progress_post_save_signal(sender, instance, **kwargs):
 
         # logic for Notification trigger is when a user enters into the Leaderboard
         leaderboard_size = getattr(settings, 'LEADERBOARD_SIZE', 3)
-        presave_leaderboard_rank = instance.presave_leaderboard_rank if instance.presave_leaderboard_rank else sys.maxint
+        presave_leaderboard_rank = instance.presave_leaderboard_rank if instance.presave_leaderboard_rank else sys.maxsize
         if leaderboard_rank <= leaderboard_size and presave_leaderboard_rank > leaderboard_size:
             try:
                 notification_msg = NotificationMessage(
-                    msg_type=get_notification_type(u'open-edx.lms.leaderboard.engagement.rank-changed'),
-                    namespace=unicode(instance.course_id),
+                    msg_type=get_notification_type('open-edx.lms.leaderboard.engagement.rank-changed'),
+                    namespace=str(instance.course_id),
                     payload={
                         '_schema_version': '1',
                         'rank': leaderboard_rank,
@@ -193,11 +190,11 @@ def handle_progress_post_save_signal(sender, instance, **kwargs):
                 # so we need to resolve these links at dispatch time
                 #
                 notification_msg.add_click_link_params({
-                    'course_id': unicode(instance.course_id),
+                    'course_id': str(instance.course_id),
                 })
 
                 publish_notification_to_user(int(instance.user.id), notification_msg)
-            except Exception, ex:
+            except Exception as ex:
                 # Notifications are never critical, so we don't want to disrupt any
                 # other logic processing. So log and continue.
                 log.exception(ex)
@@ -281,7 +278,7 @@ def _detail_results_factory():
 
 
 def _get_users_in_thread(request):
-    from lms.djangoapps.discussion_api.views import CommentViewSet
+    from lms.djangoapps.discussion.rest_api.views import CommentViewSet
     users = set()
     response_page = 1
     has_results = True
@@ -304,7 +301,7 @@ def _get_users_in_thread(request):
 
 
 def _get_users_in_comment(request, comment_id):
-    from lms.djangoapps.discussion_api.views import CommentViewSet
+    from lms.djangoapps.discussion.rest_api.views import CommentViewSet
     users = set()
     response_page = 1
     has_results = True
@@ -368,7 +365,7 @@ def _get_paginated_results(request, comment_id, is_thread):
     """
     Yield paginated comments of comment or thread.
     """
-    from lms.djangoapps.discussion_api.views import CommentViewSet
+    from lms.djangoapps.discussion.rest_api.views import CommentViewSet
 
     response_page = 1
     has_next = True
