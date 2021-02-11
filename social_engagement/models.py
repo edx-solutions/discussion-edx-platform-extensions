@@ -2,6 +2,7 @@
 Django database models supporting the social_engagement app
 """
 
+from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import Q, Sum
@@ -111,7 +112,8 @@ class StudentSocialEngagementScore(TimeStampedModel):
         if total_score:
             user_count = get_course_enrollment_count(course_id)
             if user_count:
-                avg_score = int(round(total_score / float(user_count)))
+                avg_score = total_score / float(user_count)
+                avg_score = int(Decimal(avg_score).quantize(Decimal('0'), rounding='ROUND_HALF_UP'))
 
         return avg_score
 
