@@ -1,6 +1,9 @@
 discussion-edx-platform-extensions
 ==================================
 
+Notice: This repo will be archived in April 2021.
+#######
+
 discussion-edx-platform-extensions (``social_engagement``) is a Django application responsible to compute and persist user's social score per course based on activity in the forums.
 
 
