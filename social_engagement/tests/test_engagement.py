@@ -4,32 +4,29 @@ Tests for the social_engagment subsystem
 paver test_system -s lms --test_id=lms/djangoapps/social_engagements/tests/test_engagement.py
 """
 
+from datetime import datetime, timedelta
+
+import pytz
 from django.conf import settings
 from django.db import IntegrityError
 from django.test.utils import override_settings
 
-from mock import patch
-from datetime import datetime, timedelta
-import pytz
 import ddt
-
+from edx_notifications.lib.consumer import get_notifications_count_for_user
+from edx_notifications.startup import initialize as initialize_notifications
+from mock import patch
+from social_engagement.engagement import (_detail_results_factory,
+                                          _get_details_for_deletion,
+                                          update_course_engagement)
+from social_engagement.models import (StudentSocialEngagementScore,
+                                      StudentSocialEngagementScoreHistory)
+from student.models import CourseEnrollment
 from student.roles import CourseObserverRole
 from student.tests.factories import UserFactory
-from student.models import CourseEnrollment
-from xmodule.modulestore.tests.factories import CourseFactory
-
-from social_engagement.models import StudentSocialEngagementScore, StudentSocialEngagementScoreHistory
-
-from social_engagement.engagement import update_course_engagement, _detail_results_factory, \
-    _get_details_for_deletion
-
-from edx_notifications.startup import initialize as initialize_notifications
-from edx_notifications.lib.consumer import get_notifications_count_for_user
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.tests.django_utils import (
-    ModuleStoreTestCase,
-    TEST_DATA_SPLIT_MODULESTORE
-)
+    TEST_DATA_SPLIT_MODULESTORE, ModuleStoreTestCase)
+from xmodule.modulestore.tests.factories import CourseFactory
 
 
 @patch.dict(settings.FEATURES, {'ENABLE_NOTIFICATIONS': True})
@@ -49,7 +46,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
     }
 
     def setUp(self):
-        super(StudentEngagementTests, self).setUp()
+        super().setUp()
         self.user = UserFactory()
         self.user2 = UserFactory()
         self.user_ids = (self.user.id, self.user2.id)
@@ -329,7 +326,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         )
 
         with patch('social_engagement.engagement._get_course_social_stats') as mock_func:
-            mock_func.return_value = zip(self.user_ids, stats)
+            mock_func.return_value = list(zip(self.user_ids, stats))
             update_course_engagement(self.course.id)
 
         leaderboard_position = StudentSocialEngagementScore.get_user_leaderboard_position(
@@ -475,7 +472,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
             self.assertEqual(get_notifications_count_for_user(self.user.id), 0)
 
-    class MockResponse(object):
+    class MockResponse:
         pass
 
     class MockData(dict):
@@ -487,7 +484,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
         def __getattr__(self, item):
             return self.get(item)
 
-    class MockSerializer(object):
+    class MockSerializer:
         def __init__(self, user_id, flags):
             self.instance = {'user_id': user_id, 'abuse_flaggers': flags}
 
@@ -536,7 +533,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         with patch('social_engagement.engagement._get_request') as mock_func:
             mock_func.return_value = None
-            with patch('lms.djangoapps.discussion_api.views.CommentViewSet.retrieve') as mock_func2:
+            with patch('lms.djangoapps.discussion.rest_api.views.CommentViewSet.retrieve') as mock_func2:
                 mock_func2.return_value = mock_response
 
                 results = _get_details_for_deletion(None, None)
@@ -602,7 +599,7 @@ class StudentEngagementTests(ModuleStoreTestCase):
 
         with patch('social_engagement.engagement._get_request') as mock_func:
             mock_func.return_value = None
-            with patch('lms.djangoapps.discussion_api.views.CommentViewSet.retrieve') as mock_func2:
+            with patch('lms.djangoapps.discussion.rest_api.views.CommentViewSet.retrieve') as mock_func2:
                 mock_func2.side_effect = [mock_response, mock_response2]
 
                 results = _get_details_for_deletion(None, None)

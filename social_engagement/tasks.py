@@ -2,25 +2,25 @@
 This module has implementation of celery tasks for discussion forum use cases
 """
 import logging
-import pytz
 from datetime import datetime
 
+import pytz
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import F
+
 from celery.task import task
-
-from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.keys import CourseKey
-
-from social_engagement.engagement import update_course_engagement, get_social_metric_points
+from social_engagement.engagement import (get_social_metric_points,
+                                          update_course_engagement)
 from social_engagement.models import StudentSocialEngagementScore
+from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger('edx.celery.task')
 
 
 @task(
-    name=u'lms.djangoapps.social_engagement.tasks.task_compute_social_scores_in_course',
+    name='lms.djangoapps.social_engagement.tasks.task_compute_social_scores_in_course',
     routing_key=settings.RECALCULATE_SOCIAL_ENGAGEMENT_ROUTING_KEY,
 )
 def task_compute_social_scores_in_course(course_id):
@@ -40,7 +40,7 @@ def task_compute_social_scores_in_course(course_id):
         log.info("Course with course id %s does not exist", course_id)
 
 
-@task(name=u'lms.djangoapps.social_engagement.tasks.task_update_user_engagement')
+@task(name='lms.djangoapps.social_engagement.tasks.task_update_user_engagement')
 def task_update_user_engagement(user_id, course_id, param, increment=True, items=1):
     """
     Save changes in stats and calculate score.
